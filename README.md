@@ -54,6 +54,16 @@ Mixer-Verhalten:
 - Am Pattern-Ende bekommen alle Kanäle ein Note-Off, danach folgt der Release-Nachlauf.
 - Samples pro Zeile = `floor(2646000 / (BPM*LPB))`.
 
+## Demo-Song
+
+`demos/sfx-piano.ds8k.json` lässt sich über **LOAD** laden:
+- Klavier extrem tief (A-0 … D-1) und extrem hoch (C-7 … E-8)
+- Seashore, Bird Tweet, SFX-Kit und Crystal
+- Paulstretch 4,7× mit 32k-Fenster, volle Diffusion und weit gestreutes Panorama, dadurch sehr breites Stereo
+- ca. 8 s lang
+
+`demos/sfx-piano.h` und `demos/sfx-piano.asm` sind die fertigen Exporte dazu, mit Hash `c81aa935`.
+
 ## Online stellen (Cloudflare Pages)
 
 Die Seite ist rein statisch, ein Build ist nicht nötig.
