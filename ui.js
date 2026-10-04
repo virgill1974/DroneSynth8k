@@ -459,6 +459,12 @@
       stop(); song = normSong(s); refreshAll(); changed(); status('Song geladen');
     } catch (e) { status('Song-Fehler: ' + e.message, true); }
   }
+  $('bDemo').addEventListener('click', function () {
+    this.blur();
+    if (!window.DEMO_SONG || !validSong(window.DEMO_SONG)) { status('Kein Demo-Song vorhanden', true); return; }
+    if (!confirm('Demo-Song laden? Der aktuelle Song wird ersetzt (vorher ggf. mit SAVE sichern).')) return;
+    loadSongText(JSON.stringify(window.DEMO_SONG));
+  });
   $('bSave').addEventListener('click', function () { download('song.ds8k.json', JSON.stringify(song), 'application/json'); });
   $('bLoad').addEventListener('click', function () { $('fSong').click(); });
   $('fSong').addEventListener('change', function () { if (this.files[0]) loadFile(this.files[0]); this.value = ''; });
