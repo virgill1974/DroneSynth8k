@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DroneSynth8k</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <span class="logo">DRONESYNTH8K</span>
+  <button id="bPlay" title="Space">&#9654; PLAY</button>
+  <button id="bStop">&#9632; STOP</button>
+  <label class="tog"><input type="checkbox" id="cPs" checked> PAULSTRETCH</label>
+  <span class="sep"></span>
+  <label>BPM <input type="number" id="nBpm" min="20" max="999"></label>
+  <label>LPB <input type="number" id="nLpb" min="1" max="16"></label>
+  <label>ROWS <input type="number" id="nRows" min="1" max="256"></label>
+  <label>OCT <input type="number" id="nOct" min="0" max="8"></label>
+  <label>STEP <input type="number" id="nStep" min="0" max="16"></label>
+  <span class="sep"></span>
+  <button id="bDls">GM.DLS</button>
+  <button id="bSave">SAVE</button>
+  <button id="bLoad">LOAD</button>
+  <button id="bWav">WAV</button>
+  <button id="bExport" class="hot">EXPORT C++</button>
+  <input type="file" id="fDls" accept=".dls" hidden>
+  <input type="file" id="fSong" accept=".json" hidden>
+</header>
+<main>
+  <section id="trackerWrap">
+    <table id="tracker"></table>
+  </section>
+  <aside>
+    <section>
+      <h2>INSTRUMENT</h2>
+      <div id="insSel" class="btnrow"></div>
+      <label class="row">SOUND <select id="sProg"></select></label>
+      <div id="insParams"></div>
+      <div class="btnrow"><button id="bPrev">PREVIEW C-4</button></div>
+      <div id="insInfo" class="info"></div>
+    </section>
+    <section>
+      <h2>PAULSTRETCH</h2>
+      <label class="row">WINDOW <select id="sWin"></select></label>
+      <div id="psParams"></div>
+      <div id="psInfo" class="info"></div>
+    </section>
+    <section class="help">
+      <h2>KEYS</h2>
+      <pre>Z S X D C V G B H N J M   Oktave
+Q 2 W 3 E R 5 T 6 Y 7 U   Oktave+1
+1 / ^        Note-Off
+Del / Bksp   loeschen
+Pfeile Tab   bewegen
+PgUp PgDn    16 Zeilen
+Num + / -    Oktave
+Space        Play/Stop</pre>
+    </section>
+  </aside>
+</main>
+<footer id="status">gm.dls laden: C:\Windows\System32\drivers\gm.dls (Button GM.DLS oder Datei hierher ziehen)</footer>
+<script src="gm.js"></script>
+<script src="dls.js"></script>
+<script src="engine.js"></script>
+<script src="export.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
