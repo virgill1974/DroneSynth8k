@@ -1,5 +1,6 @@
-// Minimal DLS level 1/2 parser (RIFF 'DLS '). Only melodic bank 0 instruments are kept.
-// Result: { size, bytes, ins: { prog: [region...] }, waves: [...] }
+// Minimal DLS level 1/2 parser (RIFF 'DLS ').
+// Result: { size, bytes, ins: { id: [region...] }, names: { id: name }, drum: { id: true }, waves: [...] }
+// Instrument id: GM bank 0 -> prog (0..127), GS variation -> msb*128+prog, drum kit -> 16384+prog
 // region: { lo, hi, wave, unity, fine, attn, ls, ll } (ls/ll = loop start/length in samples, ll=0 -> no loop)
 // wave:   { off (absolute file offset of PCM data), len (frames), rate, bits, ch, unity, fine, attn, ls, ll }
 (function (G) {
@@ -43,9 +44,16 @@
       if (id === 'LIST' && lt === 'lins') {
         chunks(dv, d, d + sz, function (id2, d2, sz2, lt2) {
           if (id2 !== 'LIST' || lt2 !== 'ins ') return;
-          var ins = { bank: 0, prog: 0, rgn: [] };
+          var ins = { bank: 0, prog: 0, rgn: [], name: '' };
           chunks(dv, d2, d2 + sz2, function (id3, d3, sz3, lt3) {
             if (id3 === 'insh') { ins.bank = dv.getUint32(d3 + 4, true); ins.prog = dv.getUint32(d3 + 8, true); }
+            else if (id3 === 'LIST' && lt3 === 'INFO') {
+              chunks(dv, d3, d3 + sz3, function (id4, d4, sz4) {
+                if (id4 !== 'INAM') return;
+                for (var k = 0; k < sz4; k++) { var ch = dv.getUint8(d4 + k); if (!ch) break; ins.name += String.fromCharCode(ch); }
+                ins.name = ins.name.trim();
+              });
+            }
             else if (id3 === 'LIST' && lt3 === 'lrgn') {
               chunks(dv, d3, d3 + sz3, function (id4, d4, sz4, lt4) {
                 if (id4 !== 'LIST' || (lt4 !== 'rgn ' && lt4 !== 'rgn2')) return;
@@ -91,9 +99,12 @@
       return waveList[cue] || null;
     }
 
-    var out = { size: size, bytes: new Uint8Array(buf), ins: {}, waves: waveList, count: rawIns.length };
+    var out = { size: size, bytes: new Uint8Array(buf), ins: {}, names: {}, drum: {}, waves: waveList, count: rawIns.length };
     rawIns.forEach(function (ins) {
-      if ((ins.bank & 0x80007F7F) !== 0 || ins.prog > 127 || out.ins[ins.prog]) return;
+      var drum = (ins.bank & 0x80000000) !== 0, msb = (ins.bank >> 8) & 127;
+      if ((ins.bank & 0x7F) !== 0 || ins.prog > 127 || (drum && msb)) return;
+      var id = drum ? 16384 + ins.prog : msb * 128 + ins.prog;
+      if (out.ins[id]) return;
       var list = [];
       ins.rgn.forEach(function (r) {
         var w = waveFor(r.cue);
@@ -102,7 +113,9 @@
         list.push({ lo: r.lo, hi: r.hi, wave: w, unity: s.unity, fine: s.fine, attn: s.attn, ls: s.ls, ll: s.ll });
       });
       list.sort(function (a, b) { return a.lo - b.lo; });
-      out.ins[ins.prog] = list;
+      out.ins[id] = list;
+      out.names[id] = ins.name;
+      if (drum) out.drum[id] = true;
     });
     return out;
   }

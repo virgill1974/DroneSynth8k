@@ -44,23 +44,28 @@
     var rows = song.rows, rowLen = opt.rowLen || Math.floor(2646000 / (song.bpm * song.lpb));
     var c = { rows: rows, rowLen: rowLen, pat: [], ins: [], warn: [] }, tail = 0;
     for (var ch = 0; ch < 8; ch++) {
-      var I = song.ins[ch], full = (dls && dls.ins[I.prog]) || [], used = [], p = [];
+      var I = song.ins[ch], full = (dls && dls.ins[I.prog]) || [], kit = !!(dls && dls.drum[I.prog]), used = [], p = [], chosen = {};
       for (var row = 0; row < rows; row++) {
         var e = song.pat[ch][row] | 0;
         if (e > 0 && e < 128) {
           var r = null;
           for (var k = 0; k < full.length; k++) if (e >= full[k].lo && e <= full[k].hi) { r = full[k]; break; }
-          if (!r) r = pick(full, e);
-          if (!r || r.wave.bits !== 16 || r.wave.ch !== 1 || !(r.wave.len > 0)) {
+          if (!r && kit) e = 0; // drum kit: key without sample stays silent
+          else if (!r) r = pick(full, e);
+          if (e && (!r || r.wave.bits !== 16 || r.wave.ch !== 1 || !(r.wave.len > 0))) {
             var msg = 'Kanal ' + (ch + 1) + ': ' + (r ? 'Sample nicht 16-Bit-Mono' : 'kein Sample');
             if (c.warn.indexOf(msg) < 0) c.warn.push(msg);
             e = 0;
           }
-          else if (used.indexOf(r) < 0) used.push(r);
+          else if (e) { chosen[e] = r; if (used.indexOf(r) < 0) used.push(r); }
         }
         p.push(e);
       }
       used.sort(function (a, b) { return a.hi - b.hi; });
+      for (var nk in chosen) if (pick(used, +nk) !== chosen[nk]) {
+        var m = 'Kanal ' + (ch + 1) + ': ueberlappende Regionen';
+        if (c.warn.indexOf(m) < 0) c.warn.push(m);
+      }
       var rg = used.map(function (r) {
         var w = r.wave, ls = r.ls, ll = r.ll;
         if (ls >= w.len) { ls = 0; ll = 0; }

@@ -57,7 +57,14 @@
 
   // ---------- tracker ----------
   var tbl = $('tracker'), cells = [], trs = [];
-  function insName(c) { return (c + 1) + ' ' + GM.NAMES[song.ins[c].prog]; }
+  // sound ids: 0..127 GM, msb*128+prog GS variation, 16384+prog drum kit (see dls.js)
+  function isKit(id) { return id >= 16384; }
+  function soundName(id) {
+    if (id < 128) return GM.NAMES[id];
+    if (dls && dls.names[id]) return dls.names[id];
+    return isKit(id) ? 'Kit ' + (id - 16384) : 'Var ' + (id >> 7) + ':' + (id & 127);
+  }
+  function insName(c) { return (c + 1) + ' ' + soundName(song.ins[c].prog); }
   function buildTracker() {
     var h = '<thead><tr><th></th>';
     for (var c = 0; c < 8; c++) h += '<th data-ch="' + c + '"></th>';
@@ -178,25 +185,48 @@
       b.addEventListener('click', function () { moveCursor(cur.row, +this.dataset.i, true); });
       sel.appendChild(b);
     }
-    var s = $('sProg'), h = '';
-    GM.CATS.forEach(function (cat, ci) {
-      h += '<optgroup label="' + cat + '">';
-      for (var p = ci * 8; p < ci * 8 + 8; p++) h += '<option value="' + p + '">' + ('00' + p).slice(-3) + ' ' + GM.NAMES[p] + '</option>';
-      h += '</optgroup>';
-    });
-    s.innerHTML = h;
-    s.addEventListener('change', function () { song.ins[insSel].prog = +s.value; drawHeads(); changed(); s.blur(); });
+    var s = $('sProg');
+    buildProgSelect();
+    s.addEventListener('change', function () { song.ins[insSel].prog = +s.value; selectIns(insSel); changed(); s.blur(); });
     var P = $('insParams'), I = function () { return song.ins[insSel]; };
     insShows.push(param(P, 'ATTACK ms', 0, 10000, function () { return I().att; }, function (v) { I().att = v; }));
     insShows.push(param(P, 'RELEASE ms', 0, 10000, function () { return I().rel; }, function (v) { I().rel = v; }));
     insShows.push(param(P, 'VOLUME', 0, 127, function () { return I().vol; }, function (v) { I().vol = v; }));
     insShows.push(param(P, 'PAN', 0, 127, function () { return I().pan; }, function (v) { I().pan = v; }));
-    $('bPrev').addEventListener('click', function () { preview(insSel, 60, 1.5); });
+    $('bPrev').addEventListener('click', function () { preview(insSel, isKit(song.ins[insSel].prog) ? 36 : 60, 1.5); });
   })();
+  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+  function buildProgSelect() {
+    var h = '', have = {};
+    function opt(id, label) { have[id] = 1; return '<option value="' + id + '">' + esc(label) + '</option>'; }
+    GM.CATS.forEach(function (cat, ci) {
+      h += '<optgroup label="' + cat + '">';
+      for (var p = ci * 8; p < ci * 8 + 8; p++) h += opt(p, ('00' + p).slice(-3) + ' ' + GM.NAMES[p]);
+      h += '</optgroup>';
+    });
+    if (dls) {
+      var ids = Object.keys(dls.ins).map(Number);
+      var kits = ids.filter(isKit).sort(function (a, b) { return a - b; });
+      var vars = ids.filter(function (i) { return i >= 128 && !isKit(i); })
+        .sort(function (a, b) { return (a & 127) - (b & 127) || a - b; });
+      if (kits.length) h += '<optgroup label="Drum Kits">' + kits.map(function (i) {
+        return opt(i, ('00' + (i - 16384)).slice(-3) + ' ' + soundName(i));
+      }).join('') + '</optgroup>';
+      if (vars.length) h += '<optgroup label="GS Variationen">' + vars.map(function (i) {
+        return opt(i, ('00' + (i & 127)).slice(-3) + '.' + (i >> 7) + ' ' + soundName(i));
+      }).join('') + '</optgroup>';
+    }
+    var miss = song.ins.map(function (I) { return I.prog; }).filter(function (id, k, a) { return !have[id] && a.indexOf(id) === k; });
+    if (miss.length) h += '<optgroup label="Im Song (gm.dls laden)">' + miss.map(function (i) { return opt(i, soundName(i)); }).join('') + '</optgroup>';
+    $('sProg').innerHTML = h;
+    $('sProg').value = song.ins[insSel].prog;
+  }
   function selectIns(i) {
     insSel = i;
     Array.prototype.forEach.call($('insSel').children, function (b, j) { b.classList.toggle('on', j === i); });
+    if (!$('sProg').querySelector('option[value="' + song.ins[i].prog + '"]')) buildProgSelect();
     $('sProg').value = song.ins[i].prog;
+    $('bPrev').textContent = isKit(song.ins[i].prog) ? 'PREVIEW C-2 (KICK)' : 'PREVIEW C-4';
     insShows.forEach(function (f) { f(); });
     drawHeads();
     updateInfo();
@@ -221,7 +251,9 @@
     $('psInfo').textContent = 'Zeile ' + rowLen + ' smp | Pattern ' + dry.toFixed(2) + ' s\nOutput ca. ' +
       (dry * song.ps.st / 10).toFixed(1) + ' s (+ Release-Nachlauf)';
     var p = song.ins[insSel].prog, rl = dls && dls.ins[p];
-    $('insInfo').textContent = !dls ? 'gm.dls nicht geladen' : !rl ? 'Programm fehlt in DLS' :
+    $('insInfo').textContent = !dls ? 'gm.dls nicht geladen' : !rl ? 'Sound fehlt in dieser DLS' :
+      isKit(p) ? 'Drum Kit: ' + rl.length + ' Samples, Tasten ' + noteName(rl[0].lo) + ' .. ' + noteName(rl[rl.length - 1].hi) +
+        '\nGM-Map: C-2 Kick, D-2 Snare, F#2 HiHat zu, A#2 HiHat offen, C#3 Crash' :
       rl.length + ' Region(en): ' + rl.map(function (r) { return r.lo + '-' + r.hi; }).join(' ') + ' (Key)';
   }
 
@@ -330,9 +362,11 @@
     try {
       dls = DLS.parse(buf);
       cache = { dryKey: null, dry: null, c: null, wetKey: null, wet: null, hash: null };
-      var n = Object.keys(dls.ins).length;
-      status('gm.dls: ' + name + ' | ' + dls.size + ' Bytes | ' + dls.count + ' Instrumente, ' + n + ' melodisch (Bank 0) | ' + dls.waves.length + ' Waves');
+      var ids = Object.keys(dls.ins).map(Number), nk = ids.filter(isKit).length, ng = ids.filter(function (i) { return i < 128; }).length;
+      status('gm.dls: ' + name + ' | ' + dls.size + ' Bytes | ' + ng + ' GM, ' + (ids.length - ng - nk) + ' Variationen, ' + nk + ' Drum Kits | ' + dls.waves.length + ' Waves');
       $('bDls').classList.remove('hot');
+      document.body.classList.add('loaded');
+      buildProgSelect(); drawHeads();
       if (store) idb('readwrite', function (s) { return s.put(buf, 'gm'); }).catch(function () { /* ignore */ });
       updateInfo();
     } catch (e) { dls = null; status('DLS-Fehler: ' + e.message, true); }
@@ -343,6 +377,9 @@
     if (/\.json$/i.test(f.name)) r.readAsText(f); else r.readAsArrayBuffer(f);
   }
   $('bDls').addEventListener('click', function () { $('fDls').click(); });
+  $('bDls2').addEventListener('click', function () { $('fDls').click(); });
+  if (!/Windows/i.test(navigator.userAgent)) $('notWin').textContent =
+    'Hinweis: Dieses System scheint kein Windows zu sein. Ohne eine gm.dls aus einer Windows-Installation funktioniert das Tool nicht.';
   $('fDls').addEventListener('change', function () { if (this.files[0]) loadFile(this.files[0]); this.value = ''; });
   document.addEventListener('dragover', function (e) { e.preventDefault(); document.body.classList.add('drag'); });
   document.addEventListener('dragleave', function () { document.body.classList.remove('drag'); });

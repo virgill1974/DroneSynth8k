@@ -3,6 +3,8 @@
 8-Kanal-Tracker für 4k/8k-Intros auf Basis der Windows-`gm.dls`, mit nachgeschaltetem **Stereo-Paulstretch** und **bitgenauem C++-Export**.
 Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 
+> **Windows only:** Das Tool braucht die Windows-Datei `C:\Windows\System32\drivers\gm.dls`. Die Datei wird nur lokal im Browser gelesen und nirgends hochgeladen. Auch der C++-Export lädt sie zur Laufzeit von dort.
+
 ## Start
 
 1. `index.html` im Browser öffnen. Doppelklick genügt, `file://` funktioniert.
@@ -18,7 +20,7 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 |---|---|
 | Kopfzeile | Play/Stop, Paulstretch an/aus, BPM, LPB (Zeilen pro Beat), ROWS (Pattern-Länge 1–256), OCT, STEP (Edit-Step), SAVE/LOAD (Song als JSON), WAV (Float-WAV des aktuellen Renders), EXPORT C++ |
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
-| Instrument | GM-Sound aus der nach GM-Kategorien gruppierten Liste, Attack/Release in ms (linear), Volume, Pan, Preview |
+| Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. |
 | Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Seed, Gain |
 
 Die Tasten folgen dem FT2-Layout auf Basis der physischen Tasten, funktionieren also auch mit QWERTZ:
@@ -32,11 +34,38 @@ Die Tasten folgen dem FT2-Layout auf Basis der physischen Tasten, funktionieren 
 | Pfeiltasten, Tab, PgUp/PgDn, Home/End | Cursor bewegen |
 | Num+ / Num− | Oktave wechseln |
 
+Drum Kits nutzen die GM-Drum-Map, jede Taste ist ein eigenes Sample:
+
+| Taste | Sound |
+|---|---|
+| C-2 | Kick |
+| D-2 | Snare |
+| F#2 | HiHat zu |
+| A#2 | HiHat offen |
+| C#3 | Crash |
+| D#3 | Ride |
+
+Tasten ohne Sample bleiben stumm.
+
 Mixer-Verhalten:
 - Eine neue Note schneidet die alte im selben Kanal ab.
 - Note-Off startet das Release.
 - Am Pattern-Ende bekommen alle Kanäle ein Note-Off, danach folgt der Release-Nachlauf.
 - Samples pro Zeile = `floor(2646000 / (BPM*LPB))`.
+
+## Online stellen (Cloudflare Pages)
+
+Die Seite ist rein statisch, ein Build ist nicht nötig.
+
+1. Cloudflare Dashboard → **Workers & Pages** → **Create** → **Pages** → **Connect to Git**
+2. Repo `dronesynth8k` wählen.
+3. Einstellungen:
+   - Framework preset: **None**
+   - Build command: *leer*
+   - Build output directory: `/`
+4. **Save and Deploy**.
+
+Danach wird jeder Push auf `main` automatisch veröffentlicht. `_headers` setzt kurze Cache-Zeiten für JS/CSS, damit Updates sofort ankommen.
 
 ## Export (`dronesynth.h`)
 
@@ -100,6 +129,7 @@ Den echten Hörtest mit der originalen gm.dls und Crinkler macht man unter Windo
 | Datei | Inhalt |
 |---|---|
 | `index.html`, `style.css`, `ui.js` | Oberfläche |
+| `_headers` | Cloudflare-Pages-Header |
 | `engine.js` | deterministische DSP: Mixer, FFT, Paulstretch, Hash, WAV |
 | `dls.js` | DLS-Parser |
 | `gm.js` | GM-Namen und Kategorien |

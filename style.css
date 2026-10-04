@@ -22,7 +22,15 @@ header {
   display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
   padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel);
 }
-.logo { color: var(--hot); font-weight: bold; letter-spacing: 2px; margin-right: 8px; }
+.logo { color: var(--hot); font-weight: bold; letter-spacing: 2px; margin-right: 2px; }
+.badge { color: var(--bg); background: var(--hot2); font-size: 11px; font-weight: bold; letter-spacing: 1px; padding: 1px 6px; margin-right: 6px; cursor: help; }
+#banner { padding: 8px 10px; border-bottom: 1px solid var(--hot2); background: #1a1406; color: var(--fg); line-height: 1.8; }
+#banner b { color: var(--hot2); }
+#banner code { color: var(--hot); }
+#banner button { color: var(--hot); border-color: var(--hot); }
+#notWin { display: block; color: #ff5a5a; }
+#notWin:empty { display: none; }
+body.loaded #banner { display: none; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
 button, input, select {
   font: inherit; color: var(--fg); background: var(--bg);
@@ -32,7 +40,7 @@ button { cursor: pointer; text-transform: uppercase; }
 button:hover, select:hover, input:hover { border-color: var(--dim); }
 button:active, button.on { background: var(--hot); color: var(--bg); border-color: var(--hot); }
 button.hot { color: var(--hot); border-color: var(--hot); }
-input[type=number] { width: 54px; }
+input[type=number] { width: 48px; }
 input[type=range] { padding: 0; accent-color: var(--hot); }
 label { color: var(--dim); white-space: nowrap; }
 label input, label select { margin-left: 3px; }

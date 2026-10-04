@@ -4,11 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DroneSynth8k</title>
+<meta name="description" content="DroneSynth8k: 8-Kanal-Tracker fuer 4k/8k-Intros mit Windows gm.dls, Stereo-Paulstretch und bitgenauem C++-Export. Windows only.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header>
   <span class="logo">DRONESYNTH8K</span>
+  <span class="badge" title="Benoetigt die Windows-Datei C:\Windows\System32\drivers\gm.dls">WINDOWS ONLY</span>
   <button id="bPlay" title="Space">&#9654; PLAY</button>
   <button id="bStop">&#9632; STOP</button>
   <label class="tog"><input type="checkbox" id="cPs" checked> PAULSTRETCH</label>
@@ -27,6 +29,12 @@
   <input type="file" id="fDls" accept=".dls" hidden>
   <input type="file" id="fSong" accept=".json" hidden>
 </header>
+<div id="banner">
+  <b>WINDOWS ONLY</b> &mdash; DroneSynth8k nutzt die Instrumente aus <code>C:\Windows\System32\drivers\gm.dls</code>.
+  Klicke <button id="bDls2">GM.DLS LADEN</button> und f&uuml;ge den Pfad im Datei-Dialog ein, oder ziehe die Datei ins Fenster.
+  Die Datei wird nur lokal im Browser gelesen und nicht hochgeladen.
+  <span id="notWin"></span>
+</div>
 <main>
   <section id="trackerWrap">
     <table id="tracker"></table>
@@ -55,7 +63,11 @@ Del / Bksp   loeschen
 Pfeile Tab   bewegen
 PgUp PgDn    16 Zeilen
 Num + / -    Oktave
-Space        Play/Stop</pre>
+Space        Play/Stop
+
+Drum Kits (GM-Map):
+C-2 Kick   D-2 Snare  F#2 HH zu
+A#2 HH auf C#3 Crash  D#3 Ride</pre>
     </section>
   </aside>
 </main>

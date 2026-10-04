@@ -31,9 +31,10 @@ function rgn(lo, hi, cue, ws) {
   var l = Buffer.alloc(12); l.writeUInt32LE(cue, 8);
   return list('rgn ', [ck('rgnh', h)].concat(ws ? [ws] : []).concat([ck('wlnk', l)]));
 }
-function ins(bank, prog, regions) {
+function ins(bank, prog, regions, name) {
   var h = Buffer.alloc(12); h.writeUInt32LE(regions.length, 0); h.writeUInt32LE(bank >>> 0, 4); h.writeUInt32LE(prog, 8);
-  return list('ins ', [ck('insh', h), list('lrgn', regions), list('lart', [])]);
+  return list('ins ', [ck('insh', h), list('lrgn', regions), list('lart', []),
+    list('INFO', [ck('INAM', Buffer.from((name || 'ins') + '\0', 'latin1'))])]);
 }
 
 // deterministic integer waveforms
@@ -58,7 +59,8 @@ var insts = [
   ins(0, 0, [rgn(0, 59, 0), rgn(60, 127, 1)]),
   ins(0, 48, [rgn(0, 127, 2)]),
   ins(0, 89, [rgn(0, 127, 3, wsmp(50, 25, -655360 * 6, 63, 2835))]),
-  ins(0x80000000, 0, [rgn(0, 127, 2)])
+  ins(0x80000000, 0, [rgn(36, 36, 2), rgn(38, 38, 0, wsmp(38, 0, 0, 0, 0)), rgn(42, 42, 3, wsmp(42, -20, -655360, 0, 0))], 'TestKit  '),
+  ins(0x0100, 80, [rgn(0, 127, 1, wsmp(60, 10, 0, 147, 4116))], 'Square Var')
 ];
 var colh = Buffer.alloc(4); colh.writeUInt32LE(insts.length, 0);
 var ptbl = Buffer.concat([u32s([8, waves.length]), u32s(offs)]);
