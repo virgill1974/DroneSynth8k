@@ -56,6 +56,8 @@ Mixer-Verhalten:
 
 ## Demo-Song
 
+Beim ersten Öffnen des Tools, solange noch kein Song im Browser gespeichert ist, wird `demos/demosong.ds8k.json` geladen. Eingebunden ist er über `demo-song.js`.
+
 `demos/sfx-piano.ds8k.json` lässt sich über **LOAD** laden:
 - Klavier extrem tief (A-0 … D-1) und extrem hoch (C-7 … E-8)
 - Seashore, Bird Tweet, SFX-Kit und Crystal

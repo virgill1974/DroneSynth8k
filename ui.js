@@ -30,7 +30,7 @@
   function validSong(s) {
     return s && s.pat && s.pat.length === 8 && s.ins && s.ins.length === 8 && s.ps && s.rows > 0;
   }
-  var song = defaultSong();
+  var song = (window.DEMO_SONG && validSong(window.DEMO_SONG)) ? normSong(JSON.parse(JSON.stringify(window.DEMO_SONG))) : defaultSong();
   try { var st = JSON.parse(localStorage.getItem(LS_KEY)); if (validSong(st)) song = normSong(st); } catch (e) { /* ignore */ }
 
   var dls = null, cur = { row: 0, ch: 0 }, oct = 4, step = 1, insSel = 0;
