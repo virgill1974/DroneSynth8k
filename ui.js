@@ -468,16 +468,18 @@
     try { var wet = $('cPs').checked, r = render(wet); showStatus(r, wet); download(wet ? 'dronesynth.wav' : 'dronesynth_dry.wav', E.wav(r.buf), 'audio/wav'); }
     catch (e) { status('Fehler: ' + e.message, true); }
   });
-  $('bExport').addEventListener('click', function () {
+  function exportCode(name, gen) {
     status('RENDERING FOR EXPORT ...');
     setTimeout(function () {
       try {
         var r = render(true);
-        download('dronesynth.h', Export.cpp(cache.c, cache.hash), 'text/plain');
+        download(name, gen(cache.c, cache.hash), 'text/plain');
         showStatus(r, true);
       } catch (e) { status('Fehler: ' + e.message, true); }
     }, 30);
-  });
+  }
+  $('bExport').addEventListener('click', function () { exportCode('dronesynth.h', Export.cpp); this.blur(); });
+  $('bExportAsm').addEventListener('click', function () { exportCode('dronesynth.asm', Export.asm); this.blur(); });
 
   function refreshAll() { refreshHeader(); refreshPs(); buildTracker(); selectIns(cur.ch); }
 

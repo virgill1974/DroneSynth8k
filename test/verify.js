@@ -50,5 +50,6 @@ Object.keys(songs).forEach(function (name) {
   var o = Engine.paulstretch(c, Engine.renderDry(c));
   var h = Engine.fnv1a(o);
   fs.writeFileSync(path.join(out, name + '.h'), Export.cpp(c, h));
+  fs.writeFileSync(path.join(out, name + '.asm'), Export.asm(c, h));
   console.log(name, h, 'frames=' + c.outLen, 'peak=' + Engine.peak(o).toFixed(4));
 });

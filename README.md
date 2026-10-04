@@ -98,9 +98,45 @@ Weitere Eigenschaften:
 
 FMA verändert das Ergebnis tatsächlich. Der Test unten liefert mit `-ffp-contract=fast -march=haswell` einen anderen Hash.
 
+## Export ASM (`dronesynth.asm`)
+
+**EXPORT ASM** erzeugt dieselbe Musik als NASM-Quelltext für 32-Bit-x86 (x87-FPU), bitgenau zum Tool und zum C++-Export. Für den Render-Code (ohne Loader und Player) ergab das im Test:
+
+| Variante | Code roh | komprimiert (xz) |
+|---|---|---|
+| C++ (gcc -Os) | ~2,0 KB | ~1,45 KB |
+| ASM | ~1,8 KB | ~1,17 KB |
+
+Crinkler komprimiert anders, die Reihenfolge sollte aber gleich bleiben.
+
+```
+nasm -f win32 dronesynth.asm -o dronesynth.obj     ; mit Crinkler linken: kernel32.lib winmm.lib
+```
+```cpp
+extern "C" void ds_render();   // Pass 1 + Pass 2 -> ds_out
+extern "C" void ds_play();     // waveOut, float32 stereo 44100 Hz
+extern "C" int  ds_pos();      // aktuelle Frame-Position
+extern "C" float ds_out[];
+```
+
+Optionen per `nasm -D…` oder `%define`:
+
+| Define | Wirkung |
+|---|---|
+| `DS_NO_PLAYER` | Kein waveOut-Code |
+| `DS_NOLOAD` | `ds_dls` selbst füllen |
+| `DS_GMDLS "pfad"` | Anderer Pfad zur gm.dls |
+| `DS_VERIFY` | `ds_hash()` liefert den FNV-1a-Hash von `ds_out`. Er muss dem Hash im Dateikopf entsprechen. |
+
+Bitgenauigkeit mit x87:
+- `ds_render` setzt die FPU auf **53-Bit-Präzision** (`fldcw 0x027F`). Damit runden `fadd`/`fsub`/`fmul`/`fdiv`/`fsqrt` exakt wie IEEE-double.
+- Alle Konstanten stehen als exakte Bitmuster in der Datei.
+- `(int)` wird mit `fisttp` abgeschnitten. Das braucht **SSE3**, das hat jede CPU, auf der Windows 10/11 läuft.
+- Den FPU-Control-Word nicht verändern, während `ds_render` läuft.
+
 ## Wie die Bitgenauigkeit erreicht wird
 
-`engine.js` (Tool) und der generierte C++-Code sind Zeile für Zeile gleich aufgebaut:
+`engine.js` (Tool) und der generierte C++- bzw. ASM-Code sind Zeile für Zeile gleich aufgebaut:
 
 - Gerechnet wird nur in `double`, und zwar nur mit `+ - * /` und `sqrt`. Diese Operationen sind nach IEEE-754 korrekt gerundet, in V8 genauso wie in SSE2.
 - Statt `sin`/`pow`/`exp` gibt es eigene Polynom-Versionen (`msin`, `mexp2`) mit fester Termanzahl. Die Abweichung liegt unter 5e-14.
@@ -118,8 +154,9 @@ sh test/run.sh
 
 Das Skript prüft die Bitgenauigkeit ohne Windows:
 1. `make-test-dls.js` erzeugt eine synthetische DLS-Datei mit demselben RIFF-Aufbau wie gm.dls.
-2. `verify.js` rendert mehrere Test-Songs in Node und exportiert sie als C++.
-3. Jeder Export wird mit g++ in mehreren Optimierungsstufen kompiliert. Die FNV-1a-Hashes von JS und C++ müssen übereinstimmen.
+2. `verify.js` rendert mehrere Test-Songs in Node und exportiert sie als C++ und ASM.
+3. Jeder C++-Export wird mit g++ in mehreren Optimierungsstufen kompiliert. Jeder ASM-Export wird mit nasm als 32-Bit-Linux-Programm gebaut (`test/asm_test.asm`, ohne libc) und ausgeführt.
+4. Die FNV-1a-Hashes von JS, C++ und ASM müssen übereinstimmen.
 
 Den echten Hörtest mit der originalen gm.dls und Crinkler macht man unter Windows:
 - Export mit `#define DS_VERIFY` bauen.
@@ -134,7 +171,7 @@ Den echten Hörtest mit der originalen gm.dls und Crinkler macht man unter Windo
 | `engine.js` | deterministische DSP: Mixer, FFT, Paulstretch, Hash, WAV |
 | `dls.js` | DLS-Parser |
 | `gm.js` | GM-Namen und Kategorien |
-| `export.js` | C++-Generator (Spiegel von `engine.js`) |
+| `export.js` | C++- und ASM-Generator (Spiegel von `engine.js`) |
 | `test/` | Bitgenauigkeits-Tests |
 
-**Wichtig:** Wer `engine.js` ändert, muss `export.js` identisch mitändern und anschließend `test/run.sh` ausführen.
+**Wichtig:** Wer `engine.js` ändert, muss beide Generatoren in `export.js` (C++ und ASM) identisch mitändern und anschließend `test/run.sh` ausführen.
