@@ -27,14 +27,14 @@ var songs = {
     s.bpm = 97; s.lpb = 3;
     s.pat[0][15] = 127; s.pat[1][0] = 1; s.pat[1][1] = 255; s.pat[1][2] = 255; s.pat[2][0] = 60; s.pat[2][1] = 62;
     s.ins[2].att = 0; s.ins[2].rel = 0; s.ins[1].prog = 48; s.ins[0].vol = 127; s.ins[0].pan = 127;
-    s.ps = { win: 10, st: 10, seed: 4294967295, gain: 250 };
+    s.ps = { win: 10, st: 10, seed: 4294967295, gain: 250, df: 0 };
   }),
-  bigwin: song(function (s) { s.pat[4][0] = 45; s.pat[5][4] = 64; s.ins[5].prog = 89; s.ps = { win: 15, st: 123, seed: 3, gain: 80 }; }),
+  bigwin: song(function (s) { s.pat[4][0] = 45; s.pat[5][4] = 64; s.ins[5].prog = 89; s.ps = { win: 15, st: 123, seed: 3, gain: 80, df: 7 }; }),
   drums: song(function (s) {
     s.ins[0].prog = 16384; s.ins[0].att = 0; s.ins[1].prog = 16384; s.ins[1].pan = 10; s.ins[2].prog = 208;
     [36, 0, 42, 0, 38, 0, 42, 37, 36, 36, 42, 0, 38, 0, 42, 60].forEach(function (n, i) { s.pat[0][i] = n; });
     s.pat[1][3] = 42; s.pat[1][11] = 38; s.pat[2][0] = 57; s.pat[2][12] = 255;
-    s.ps = { win: 11, st: 25, seed: 99, gain: 120 };
+    s.ps = { win: 11, st: 25, seed: 99, gain: 120, df: 4 };
   }),
   empty: song(function () {})
 };

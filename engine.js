@@ -79,7 +79,7 @@
     }
     c.dryLen = rows * rowLen + tail;
     var P = song.ps;
-    c.win = P.win; c.st = P.st; c.seed = P.seed >>> 0; c.gain = P.gain;
+    c.win = P.win; c.st = P.st; c.seed = P.seed >>> 0; c.gain = P.gain; c.df = P.df == null ? 10 : P.df;
     var N = 1 << c.win, H = N >> 1, disp = H * 10 / c.st, frames = 0;
     for (var sp = 0; sp < c.dryLen; sp += disp) frames++;
     c.outLen = frames * H + H;
@@ -146,9 +146,10 @@
   }
 
   // Pass 2: stereo Paulstretch. L in re, R in im of one complex FFT; independent random phases per channel.
+  // Diffusion df (0..10): random phases span 2*pi / 2^(10-df); 10 = full circle.
   // Output: interleaved float32 stereo, overlap-added in place.
   function paulstretch(c, dry) {
-    var N = 1 << c.win, H = N >> 1, M = 2 * N - 1, n = dry.n, L = dry.L, R = dry.R;
+    var N = 1 << c.win, H = N >> 1, M = (2 * N >> (10 - c.df)) - 1, n = dry.n, L = dry.L, R = dry.R;
     var tab = new Float64Array(N * 5 / 2), re = new Float64Array(N), im = new Float64Array(N);
     for (var k = 0; k < N * 5 / 2; k++) tab[k] = msin(PI * k / N);
     var out = new Float32Array(c.outLen * 2);

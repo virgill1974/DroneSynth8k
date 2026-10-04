@@ -13,7 +13,7 @@
 
   // ---------- state ----------
   function defaultSong() {
-    var s = { v: 1, bpm: 120, lpb: 4, rows: 32, pat: [], ins: [], ps: { win: 14, st: 80, seed: 1, gain: 100 } };
+    var s = { v: 1, bpm: 120, lpb: 4, rows: 32, pat: [], ins: [], ps: { win: 14, st: 80, seed: 1, gain: 100, df: 10 } };
     var progs = [89, 52, 48, 95, 50, 94, 35, 99];
     for (var c = 0; c < 8; c++) {
       s.pat.push(new Array(s.rows).fill(0));
@@ -243,6 +243,7 @@
     psShows.push(param(P, 'STRETCH x', 10, 1000, function () { return ps().st; }, function (v) { ps().st = v; }, 10));
     psShows.push(param(P, 'SEED', 0, 65535, function () { return ps().seed; }, function (v) { ps().seed = v; }));
     psShows.push(param(P, 'GAIN %', 0, 1000, function () { return ps().gain; }, function (v) { ps().gain = v; }));
+    psShows.push(param(P, 'DIFFUSION', 0, 10, function () { return ps().df == null ? 10 : ps().df; }, function (v) { ps().df = v; }));
   })();
   function refreshPs() { $('sWin').value = song.ps.win; psShows.forEach(function (f) { f(); }); }
 
