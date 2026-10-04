@@ -459,6 +459,16 @@
       stop(); song = normSong(s); refreshAll(); changed(); status('Song geladen');
     } catch (e) { status('Song-Fehler: ' + e.message, true); }
   }
+  $('bClear').addEventListener('click', function () {
+    this.blur();
+    if (!confirm('Alle Noten loeschen und Instrumente zuruecksetzen? (vorher ggf. mit SAVE sichern)')) return;
+    stop();
+    for (var c = 0; c < 8; c++) {
+      song.pat[c] = new Array(song.rows).fill(0);
+      song.ins[c] = { prog: 0, att: 0, rel: 800, vol: 100, pan: 64 };
+    }
+    refreshAll(); changed(); status('Song geleert');
+  });
   $('bDemo').addEventListener('click', function () {
     this.blur();
     if (!window.DEMO_SONG || !validSong(window.DEMO_SONG)) { status('Kein Demo-Song vorhanden', true); return; }

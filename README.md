@@ -18,7 +18,7 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 
 | Bereich | |
 |---|---|
-| Kopfzeile | Play/Stop, Paulstretch an/aus, BPM, LPB (Zeilen pro Beat), ROWS (Pattern-Länge 1–256), OCT, STEP (Edit-Step), SAVE/LOAD (Song als JSON), WAV (Float-WAV des aktuellen Renders), EXPORT C++ |
+| Kopfzeile | Play/Stop, Paulstretch an/aus, BPM, LPB (Zeilen pro Beat), ROWS (Pattern-Länge 1–256), OCT, STEP (Edit-Step), CLEAR (alle Noten löschen, Instrumente auf Piano/Standardwerte; Tempo, Länge und Paulstretch bleiben), DEMO, SAVE/LOAD (Song als JSON), WAV (Float-WAV des aktuellen Renders), EXPORT C++ |
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
 | Scope | Oszilloskop (L grün, R amber) und Lissajous (X = L, Y = R), sample-synchron zum laufenden Play/Preview |
 | Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. |
