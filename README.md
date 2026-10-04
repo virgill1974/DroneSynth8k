@@ -20,8 +20,9 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 |---|---|
 | Kopfzeile | Play/Stop, Paulstretch an/aus, BPM, LPB (Zeilen pro Beat), ROWS (Pattern-Länge 1–256), OCT, STEP (Edit-Step), SAVE/LOAD (Song als JSON), WAV (Float-WAV des aktuellen Renders), EXPORT C++ |
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
+| Scope | Oszilloskop (L grün, R amber) und Lissajous (X = L, Y = R), sample-synchron zum laufenden Play/Preview |
 | Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. |
-| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Seed, Gain, Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer). Diffusion kostet im Export 0 Byte, sie ist nur eine Konstante. |
+| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer). Diffusion kostet im Export 0 Byte, sie ist nur eine Konstante. |
 
 Die Tasten folgen dem FT2-Layout auf Basis der physischen Tasten, funktionieren also auch mit QWERTZ:
 
@@ -106,7 +107,7 @@ FMA verändert das Ergebnis tatsächlich. Der Test unten liefert mit `-ffp-contr
 - Alle Parameter sind Integer. Abgeleitete Werte (Envelope-Schritte, Pan, Rate) entstehen in beiden Sprachen mit derselben Formel in derselben Reihenfolge.
 - Pass 1 ist ein Sample-Player mit linearer Interpolation, DLS-Loops, Fine-Tune, Attenuation und 44100 Hz.
 - Pass 2 ist Paulstretch mit radix-2-FFT und Sinus-Fenster bei Hop N/2. Eine einzige komplexe FFT verarbeitet beide Kanäle zugleich (L im Real-, R im Imaginärteil). Die Spektren werden getrennt, und **jeder Kanal bekommt eigene Zufallsphasen**. Daraus entsteht die Stereo-Breite.
-- Der Zufall kommt aus einem 32-Bit-LCG mit Seed. Die Phasen sind Indizes in die Sinustabelle.
+- Der Zufall kommt aus einem 32-Bit-LCG mit Seed (intern fest auf 1; jeder Seed klingt statistisch gleich). Die Phasen sind Indizes in die Sinustabelle.
 - Die Ausgabe wird als float32 overlap-add direkt in den Ausgabepuffer geschrieben (`Float32Array` bzw. `float[]`, beide mit Round-to-nearest-even).
 
 ## Tests

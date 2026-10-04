@@ -17,17 +17,21 @@
     var progs = [89, 52, 48, 95, 50, 94, 35, 99];
     for (var c = 0; c < 8; c++) {
       s.pat.push(new Array(s.rows).fill(0));
-      s.ins.push({ prog: progs[c], att: 300, rel: 800, vol: 100, pan: [64, 40, 88, 30, 98, 64, 64, 64][c] });
+      s.ins.push({ prog: progs[c], att: 0, rel: 800, vol: 100, pan: [64, 40, 88, 30, 98, 64, 64, 64][c] });
     }
     s.pat[0][0] = 48; s.pat[1][4] = 55; s.pat[2][8] = 60; s.pat[3][12] = 63; s.pat[6][0] = 36;
     [0, 1, 2, 3, 6].forEach(function (c) { s.pat[c][28] = 255; });
+    return s;
+  }
+  function normSong(s) { // UI limits: gain <= 200 %, seed fixed (internal)
+    s.ps.gain = Math.min(200, s.ps.gain | 0); s.ps.seed = 1;
     return s;
   }
   function validSong(s) {
     return s && s.pat && s.pat.length === 8 && s.ins && s.ins.length === 8 && s.ps && s.rows > 0;
   }
   var song = defaultSong();
-  try { var st = JSON.parse(localStorage.getItem(LS_KEY)); if (validSong(st)) song = st; } catch (e) { /* ignore */ }
+  try { var st = JSON.parse(localStorage.getItem(LS_KEY)); if (validSong(st)) song = normSong(st); } catch (e) { /* ignore */ }
 
   var dls = null, cur = { row: 0, ch: 0 }, oct = 4, step = 1, insSel = 0;
   var cache = { dryKey: null, dry: null, c: null, wetKey: null, wet: null, hash: null, ms: 0 };
@@ -241,8 +245,7 @@
     s.addEventListener('change', function () { song.ps.win = +s.value; changed(); s.blur(); });
     var P = $('psParams'), ps = function () { return song.ps; };
     psShows.push(param(P, 'STRETCH x', 10, 1000, function () { return ps().st; }, function (v) { ps().st = v; }, 10));
-    psShows.push(param(P, 'SEED', 0, 65535, function () { return ps().seed; }, function (v) { ps().seed = v; }));
-    psShows.push(param(P, 'GAIN %', 0, 1000, function () { return ps().gain; }, function (v) { ps().gain = v; }));
+    psShows.push(param(P, 'GAIN %', 0, 200, function () { return ps().gain; }, function (v) { ps().gain = v; }));
     psShows.push(param(P, 'DIFFUSION', 0, 10, function () { return ps().df == null ? 10 : ps().df; }, function (v) { ps().df = v; }));
   })();
   function refreshPs() { $('sWin').value = song.ps.win; psShows.forEach(function (f) { f(); }); }
@@ -287,8 +290,67 @@
     var src = actx.createBufferSource(); src.buffer = b; src.connect(actx.destination);
     src.onended = onEnd || null;
     src.start();
-    return { src: src, t0: actx.currentTime };
+    scopeSrc = { buf: f32, t0: actx.currentTime };
+    if (!scopeRun) { scopeRun = true; requestAnimationFrame(scopeDraw); }
+    return { src: src, t0: scopeSrc.t0 };
   }
+
+  // ---------- scope: oscilloscope (L green, R amber) + lissajous (x=L, y=R), sample-synced to the played buffer ----------
+  var cv = $('scope'), g2 = cv.getContext('2d'), scopeSrc = null, scopeRun = false, SW = 0, SH = 0;
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  var COL = { bg: cssVar('--bg'), line: cssVar('--line'), a: cssVar('--hot'), b: cssVar('--hot2') };
+  function scopeSize() {
+    var d = window.devicePixelRatio || 1;
+    SW = cv.clientWidth; SH = cv.clientHeight;
+    cv.width = Math.round(SW * d); cv.height = Math.round(SH * d);
+    g2.setTransform(d, 0, 0, d, 0, 0);
+    scopeClear();
+  }
+  function scopeGrid(x0, w) {
+    g2.strokeStyle = COL.line; g2.lineWidth = 1; g2.beginPath();
+    g2.moveTo(x0, SH / 2 + 0.5); g2.lineTo(x0 + w, SH / 2 + 0.5);
+    g2.moveTo(x0 + w / 2 + 0.5, 0); g2.lineTo(x0 + w / 2 + 0.5, SH);
+    g2.stroke();
+  }
+  function scopeClear() {
+    g2.fillStyle = COL.bg; g2.fillRect(0, 0, SW, SH);
+    var ow = SW - SH - 6;
+    scopeGrid(0, ow); scopeGrid(SW - SH, SH);
+    g2.fillStyle = COL.line; g2.fillRect(ow + 2, 0, 1, SH);
+  }
+  function clip(v) { return v > 1 ? 1 : v < -1 ? -1 : v; }
+  function scopeDraw() {
+    var f = scopeSrc && scopeSrc.buf, n = f ? f.length / 2 : 0;
+    var pos = f ? Math.floor((actx.currentTime - scopeSrc.t0) * 44100) : 0;
+    if (!f || pos >= n) { scopeSrc = null; scopeRun = false; scopeClear(); return; }
+    var N = 1024, ow = SW - SH - 6, hy = SH / 2 - 2, i, k, ch;
+    // oscilloscope: full redraw
+    g2.fillStyle = COL.bg; g2.fillRect(0, 0, ow, SH); scopeGrid(0, ow);
+    g2.lineWidth = 1;
+    for (ch = 1; ch >= 0; ch--) {
+      g2.strokeStyle = ch ? COL.b : COL.a; g2.beginPath();
+      for (i = 0; i < ow; i++) {
+        k = pos + Math.floor(i * N / ow);
+        var y = SH / 2 - clip(k < n ? f[2 * k + ch] : 0) * hy;
+        if (i) g2.lineTo(i, y); else g2.moveTo(i, y);
+      }
+      g2.stroke();
+    }
+    // lissajous: phosphor fade
+    var x0 = SW - SH, cx = x0 + SH / 2, cy = SH / 2;
+    g2.globalAlpha = 0.3; g2.fillStyle = COL.bg; g2.fillRect(x0, 0, SH, SH); g2.globalAlpha = 1;
+    scopeGrid(x0, SH);
+    g2.strokeStyle = COL.a; g2.globalAlpha = 0.8; g2.beginPath();
+    for (i = 0; i < N && pos + i < n; i++) {
+      k = 2 * (pos + i);
+      var x = cx + clip(f[k]) * hy, yy = cy - clip(f[k + 1]) * hy;
+      if (i) g2.lineTo(x, yy); else g2.moveTo(x, yy);
+    }
+    g2.stroke(); g2.globalAlpha = 1;
+    requestAnimationFrame(scopeDraw);
+  }
+  window.addEventListener('resize', scopeSize);
+  scopeSize();
   function preview(ch, note, sec) {
     if (!dls) return;
     var tmp = JSON.parse(JSON.stringify(song));
@@ -324,7 +386,7 @@
       (c.warn.length ? ' | ' + c.warn.join(', ') : ''), c.warn.length > 0);
   }
   function stop() {
-    if (play) { try { play.p.src.stop(); } catch (e) { /* ignore */ } play = null; }
+    if (play) { try { play.p.src.stop(); } catch (e) { /* ignore */ } play = null; scopeSrc = null; }
     $('bPlay').classList.remove('on');
     trs.forEach(function (tr) { tr.classList.remove('play'); });
   }
@@ -394,7 +456,7 @@
     try {
       var s = JSON.parse(t);
       if (!validSong(s)) throw new Error('kein DroneSynth8k-Song');
-      stop(); song = s; refreshAll(); changed(); status('Song geladen');
+      stop(); song = normSong(s); refreshAll(); changed(); status('Song geladen');
     } catch (e) { status('Song-Fehler: ' + e.message, true); }
   }
   $('bSave').addEventListener('click', function () { download('song.ds8k.json', JSON.stringify(song), 'application/json'); });
