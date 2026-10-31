@@ -80,6 +80,7 @@
     c.dryLen = rows * rowLen + tail;
     var P = song.ps;
     c.win = P.win; c.st = P.st; c.seed = P.seed >>> 0; c.gain = P.gain; c.df = P.df == null ? 10 : P.df;
+    c.sw = P.sw == null ? 10 : P.sw;
     var N = 1 << c.win, H = N >> 1, disp = H * 10 / c.st, frames = 0;
     for (var sp = 0; sp < c.dryLen; sp += disp) frames++;
     c.outLen = frames * H + H;
@@ -147,11 +148,15 @@
 
   // Pass 2: stereo Paulstretch. L in re, R in im of one complex FFT; independent random phases per channel.
   // Diffusion df (0..10): random phases span 2*pi / 2^(10-df); 10 = full circle.
+  // Stereo width sw (0..10): R phase = L phase + random offset spanning 2*pi / 2^(10-sw); 0 = same phases (mono safe),
+  // 10 = independent L/R phases (separate random draw, the original behaviour).
+  // Sine table: rotation recurrence from the exact constants S = sin(pi/N), C = cos(pi/N) (see sinCos).
   // Output: interleaved float32 stereo, overlap-added in place.
   function paulstretch(c, dry) {
-    var N = 1 << c.win, H = N >> 1, M = (2 * N >> (10 - c.df)) - 1, n = dry.n, L = dry.L, R = dry.R;
+    var N = 1 << c.win, H = N >> 1, M = (2 * N >> (10 - c.df)) - 1, W = widthMask(c), n = dry.n, L = dry.L, R = dry.R;
     var tab = new Float64Array(N * 5 / 2), re = new Float64Array(N), im = new Float64Array(N);
-    for (var k = 0; k < N * 5 / 2; k++) tab[k] = msin(PI * k / N);
+    var sc = sinCos(N), S = sc[0], C = sc[1], ts = 0, tc = 1, tt;
+    for (var k = 0; k < N * 5 / 2; k++) { tab[k] = ts; tt = tc * C - ts * S; ts = ts * C + tc * S; tc = tt; }
     var out = new Float32Array(c.outLen * 2);
     var s = c.seed >>> 0, g = c.gain / (200 * N), disp = H * 10 / c.st, o = 0;
     for (var sp = 0; sp < n; sp += disp, o += H) {
@@ -165,7 +170,7 @@
         a = ai + bi; b = ar - br;
         var mR = Math.sqrt(a * a + b * b);
         s = (Math.imul(s, 1103515245) + 12345) >>> 0; var q = (s >>> 8) & M, sL = tab[q], cL = tab[q + H];
-        s = (Math.imul(s, 1103515245) + 12345) >>> 0; q = (s >>> 8) & M; var sR = tab[q], cR = tab[q + H];
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0; q = W < 0 ? (s >>> 8) & M : (q + ((s >>> 8) & W)) & M; var sR = tab[q], cR = tab[q + H];
         var x = mL * cL, y = mL * sL, u = mR * cR, v = mR * sR;
         re[k] = x - v; im[k] = y + u; re[k2] = x + v; im[k2] = u - y;
       }
@@ -174,6 +179,11 @@
     }
     return out;
   }
+
+  // exact constants for the sine table recurrence (emitted bit-exact into the exports)
+  function sinCos(N) { return [msin(PI / N), msin(PI / N + PI_2)]; }
+  // stereo width mask; -1 = independent phases (sw 10, no extra code in the exports)
+  function widthMask(c) { return c.sw >= 10 ? -1 : c.sw > 0 ? ((2 << c.win) >> (10 - c.sw)) - 1 : 0; }
 
   function dryInterleaved(dry) {
     var o = new Float32Array(dry.n * 2);
@@ -206,7 +216,7 @@
 
   G.Engine = {
     SR: SR, msin: msin, mexp2: mexp2, pick: pick, compile: compile, attachPcm: attachPcm,
-    renderDry: renderDry, paulstretch: paulstretch, dryInterleaved: dryInterleaved,
+    renderDry: renderDry, paulstretch: paulstretch, sinCos: sinCos, widthMask: widthMask, dryInterleaved: dryInterleaved,
     fnv1a: fnv1a, peak: peak, wav: wav, fft: fft
   };
 })(typeof window !== 'undefined' ? window : module.exports);

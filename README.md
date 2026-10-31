@@ -22,7 +22,21 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
 | Scope | Oszilloskop (L grün, R amber) und Lissajous (X = L, Y = R), sample-synchron zum laufenden Play/Preview |
 | Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. |
-| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer). Diffusion kostet im Export 0 Byte, sie ist nur eine Konstante. |
+| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer; kostet im Export 0 Byte), Stereo (0–10: Stereobreite; 10 = L/R mit unabhängigen Zufallsphasen, maximal breit; 0 = L und R mit gleichen Phasen; bei 10 kostet es 0 Byte, darunter ca. 6 Byte). |
+
+Lautstärke-Wabern: Paulstretch würfelt die Phasen jedes Frequenzbands in jedem Fenster neu. Bänder, die zum selben Ton gehören, überlagern sich dadurch mal verstärkend, mal auslöschend. Das ist im Original-Paulstretch genauso. Gemessen über 50-ms-Blöcke:
+
+| Material | Stereo gehört | Mono (L+R) |
+|---|---|---|
+| einzelner gehaltener Ton | ~6–8 dB | ~8–12 dB |
+| Akkord (6 Töne) | ~3,5 dB | ~5,5 dB |
+| Rauschen | ~1 dB | ~1,5 dB |
+
+Jeder einzelne Kanal wabert so stark wie die Mono-Summe. In Stereo klingt es nur ruhiger, weil L und R unabhängig wabern und sich beim Hören ausgleichen. Der STEREO-Regler ändert daran nichts, er regelt nur die Breite.
+
+Was hilft:
+- dichteres Material: Akkorde, mehrere Stimmen, Rauschanteile
+- DIFFUSION 8: Bei Einzeltönen geht Mono-Wabern von ~12 auf ~8 dB zurück, der Klang wird aber etwas pulsierender
 
 Die Tasten folgen dem FT2-Layout auf Basis der physischen Tasten, funktionieren also auch mit QWERTZ:
 
@@ -64,7 +78,7 @@ Beim ersten Öffnen des Tools, solange noch kein Song im Browser gespeichert ist
 - Paulstretch 4,7× mit 32k-Fenster, volle Diffusion und weit gestreutes Panorama, dadurch sehr breites Stereo
 - ca. 8 s lang
 
-`demos/sfx-piano.h` und `demos/sfx-piano.asm` sind die fertigen Exporte dazu, mit Hash `c81aa935`.
+`demos/sfx-piano.h` und `demos/sfx-piano.asm` sind die fertigen Exporte dazu, mit Hash `8f23eb81`.
 
 ## Online stellen (Cloudflare Pages)
 
@@ -112,14 +126,14 @@ FMA verändert das Ergebnis tatsächlich. Der Test unten liefert mit `-ffp-contr
 
 ## Export ASM (`dronesynth.asm`)
 
-**EXPORT ASM** erzeugt dieselbe Musik als NASM-Quelltext für 32-Bit-x86 (x87-FPU), bitgenau zum Tool und zum C++-Export. Für den Render-Code (ohne Loader und Player) ergab das im Test:
+**EXPORT ASM** erzeugt dieselbe Musik als NASM-Quelltext für 32-Bit-x86 (x87-FPU), bitgenau zum Tool und zum C++-Export. Gemessen am Demo-Song, ohne Loader und Player, Code + Daten. Die Kompression ist mit zpaq gemessen, einem Context-Model-Kompressor wie Crinkler; die echten Crinkler-Zahlen weichen ab:
 
-| Variante | Code roh | komprimiert (xz) |
+| Variante | roh | komprimiert |
 |---|---|---|
-| C++ (gcc -Os) | ~2,0 KB | ~1,45 KB |
-| ASM | ~1,8 KB | ~1,17 KB |
+| C++ (gcc -Os, x86) | ~2,7 KB | ~1,55 KB |
+| ASM | ~2,3 KB | ~1,32 KB |
 
-Crinkler komprimiert anders, die Reihenfolge sollte aber gleich bleiben.
+Hinweis zur Größe: Für Crinkler zählt die komprimierte Größe. Gleichartiger, wiederholter Code kostet dort fast nichts. Code „zusammenzufalten“ (Unterprogramme, Register-Tricks) macht ihn roh kleiner, komprimiert aber oft größer.
 
 ```
 nasm -f win32 dronesynth.asm -o dronesynth.obj     ; mit Crinkler linken: kernel32.lib winmm.lib
@@ -151,7 +165,8 @@ Bitgenauigkeit mit x87:
 `engine.js` (Tool) und der generierte C++- bzw. ASM-Code sind Zeile für Zeile gleich aufgebaut:
 
 - Gerechnet wird nur in `double`, und zwar nur mit `+ - * /` und `sqrt`. Diese Operationen sind nach IEEE-754 korrekt gerundet, in V8 genauso wie in SSE2.
-- Statt `sin`/`pow`/`exp` gibt es eigene Polynom-Versionen (`msin`, `mexp2`) mit fester Termanzahl. Die Abweichung liegt unter 5e-14.
+- Statt `pow`/`exp` gibt es eine eigene Polynom-Version (`mexp2`) mit fester Termanzahl.
+- Die Sinustabelle entsteht per Drehungs-Rekursion aus zwei exakten Konstanten sin(π/N) und cos(π/N). Das Tool berechnet sie mit seinem eigenen Polynom-Sinus (`msin`), die Exporte bekommen sie als Bitmuster. So braucht der exportierte Code gar keine Sinusfunktion.
 - Alle Parameter sind Integer. Abgeleitete Werte (Envelope-Schritte, Pan, Rate) entstehen in beiden Sprachen mit derselben Formel in derselben Reihenfolge.
 - Pass 1 ist ein Sample-Player mit linearer Interpolation, DLS-Loops, Fine-Tune, Attenuation und 44100 Hz.
 - Pass 2 ist Paulstretch mit radix-2-FFT und Sinus-Fenster bei Hop N/2. Eine einzige komplexe FFT verarbeitet beide Kanäle zugleich (L im Real-, R im Imaginärteil). Die Spektren werden getrennt, und **jeder Kanal bekommt eigene Zufallsphasen**. Daraus entsteht die Stereo-Breite.

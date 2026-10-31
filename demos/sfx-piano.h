@@ -1,7 +1,7 @@
 // DroneSynth8k export (generated). Pass 1: gm.dls tracker render, pass 2: stereo Paulstretch.
 // Output: ds_out = DS_OUT_LEN stereo frames, float32 interleaved, 44100 Hz. Bit-exact with the web tool.
 // gm.dls size when exported: 3440660 bytes (sample offsets below are absolute file offsets).
-// Expected FNV-1a hash of ds_out (#define DS_VERIFY, then ds_hash()): c81aa935
+// Expected FNV-1a hash of ds_out (#define DS_VERIFY, then ds_hash()): 8f23eb81
 // Build: MSVC x64 or x86 /arch:SSE2, /fp:precise. Never /fp:fast, /fp:contract, /arch:IA32 (x87) or FMA.
 //        gcc/clang: -ffp-contract=off -msse2 -mfpmath=sse
 // Use:   ds_render(); ds_play();   (#define DS_NO_PLAYER to skip waveOut, link winmm.lib otherwise)
@@ -30,26 +30,22 @@ static const unsigned char ds_pat[8][DS_ROWS]={
 {0,108,0,0,0,0,0,0,0,115,0,0,0,0,0,0}};
 static const int ds_ins[8][4]={{0,26460,127,20},{0,26460,110,112},{0,26460,100,10},{8820,26460,100,30},{4410,26460,80,100},{0,22050,90,85},{0,26460,120,100},{0,26460,70,64}};
 static const int ds_rs[9]={0,1,3,5,6,7,10,11,12};
-static const int ds_rg[][9]={{38,1869034,13672,11989,1682,36,-4,22050,-7405568},{97,2032078,6442,5392,1049,92,1,22050,-5373952},{127,2045128,4842,4686,155,103,3,22050,-6177060},{100,2032078,6442,5392,1049,92,1,22050,-5261590},{127,2045128,4842,4686,155,103,3,22050,-5261590},{127,2421238,13669,1,13667,70,44,22050,-1636067},{127,501698,4023,2536,1486,77,13,22050,-3276800},{52,1507508,17434,0,0,56,0,22050,-655360},{60,2412978,4047,0,0,75,0,22050,-1638400},{66,883860,5984,7,5976,86,45,22050,0},{38,1869034,13672,11989,1682,36,-4,22050,-7405568},{127,1114670,3196,2374,821,81,-12,22050,-2686976}};
+// regions: hi,len,loop start,loop len,unity,fine,rate (16 bit) + file offset, attenuation (32 bit)
+static const short ds_rg[][7]={{38,13672,11989,1682,36,-4,22050},{97,6442,5392,1049,92,1,22050},{127,4842,4686,155,103,3,22050},{100,6442,5392,1049,92,1,22050},{127,4842,4686,155,103,3,22050},{127,13669,1,13667,70,44,22050},{127,4023,2536,1486,77,13,22050},{52,17434,0,0,56,0,22050},{60,4047,0,0,75,0,22050},{66,5984,7,5976,86,45,22050},{38,13672,11989,1682,36,-4,22050},{127,3196,2374,821,81,-12,22050}};
+static const int ds_rgi[][2]={{1869034,-7405568},{2032078,-5373952},{2045128,-6177060},{2032078,-5261590},{2045128,-5261590},{2421238,-1636067},{501698,-3276800},{1507508,-655360},{2412978,-1638400},{883860,0},{1869034,-7405568},{1114670,-2686976}};
 static unsigned char ds_dls[DS_DLS_SIZE];
-static double ds_L[DS_DRY],ds_R[DS_DRY],ds_re[DS_N],ds_im[DS_N],ds_tab[DS_N*5/2];
+static double ds_L[DS_DRY+DS_N],ds_R[DS_DRY+DS_N],ds_re[DS_N],ds_im[DS_N],ds_tab[DS_N*5/2]; // dry buffers zero padded
 static float ds_out[DS_OUT_LEN*2];
 
 #include <emmintrin.h>
 static double ds_sqrt(double x){return _mm_cvtsd_f64(_mm_sqrt_sd(_mm_set_sd(x),_mm_set_sd(x)));}
-static double ds_sin(double x){
- while(x>3.141592653589793)x-=6.283185307179586;
- while(x<-3.141592653589793)x+=6.283185307179586;
- if(x>1.5707963267948966)x=3.141592653589793-x;else if(x<-1.5707963267948966)x=-3.141592653589793-x;
- double x2=x*x,r=1;
- for(int k=16;k>0;k-=2)r=1-x2/((k+1)*k)*r;
- return x*r;
-}
+// exact double constants (bit patterns): ln2, dls attenuation scale, sin(pi/N), cos(pi/N)
+static const union{unsigned long long u;double d;}ds_k[4]={{0x3fe62e42fefa39efull},{0x3e91021e1a8b49e2ull},{0x3f1921fb539ecf31ull},{0x3feffffffd8859eeull}};
 static double ds_exp2(double x){
  double s=1;
  while(x<0){x+=1;s*=0.5;}
  while(x>=1){x-=1;s*=2;}
- double t=x*0.6931471805599453,r=1;
+ double t=x*ds_k[0].d,r=1;
  for(int k=14;k>0;k--)r=1+t/k*r;
  return s*r;
 }
@@ -83,36 +79,37 @@ static void ds_render(){
  ds_load();
  // pass 1: tracker
  for(int c=0;c<8;c++){
-  const int*I=ds_ins[c],*r=ds_rg[0];const short*D=0;int on=0,t=0;
+  const int*I=ds_ins[c],*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;
   double pos=0,rate=0,env=0,d=0,g=0,pl=(127-I[3])/127.0,pr=I[3]/127.0;
   for(int row=0;row<=DS_ROWS;row++){
    int e=row<DS_ROWS?ds_pat[c][row]:255;
    if(e==255){if(on){if(I[1]>0)d=-env/I[1];else on=0;}}
    else if(e){
-    for(int k=ds_rs[c];k<ds_rs[c+1];k++){r=ds_rg[k];if(e<=r[0])break;}
-    D=(const short*)(ds_dls+r[1]);on=1;pos=0;
-    rate=ds_exp2((e-r[5])/12.0+r[6]/1200.0)*r[7]/44100.0;
-    g=I[2]/127.0*ds_exp2(r[8]*(3.321928094887362/13107200.0))/32768.0;
+    for(int k=ds_rs[c];k<ds_rs[c+1];k++){r=ds_rg[k];ri=ds_rgi[k];if(e<=r[0])break;}
+    D=(const short*)(ds_dls+ri[0]);on=1;pos=0;
+    rate=ds_exp2((e-r[4])/12.0+r[5]/1200.0)*r[6]/44100.0;
+    g=I[2]/127.0*ds_exp2(ri[1]*ds_k[1].d)/32768.0;
     if(I[0]>0){env=0;d=1.0/I[0];}else{env=1;d=0;}
    }
    int end=row<DS_ROWS?t+DS_ROWLEN:DS_DRY;
    for(;t<end;t++)if(on){
-    int ip=(int)pos,nx=ip+1,lend=r[3]+r[4],s0=D[ip],s1;double fr=pos-ip;
-    if(r[4]){if(nx>=lend)nx-=r[4];s1=D[nx];}else s1=nx<r[2]?D[nx]:0;
+    int ip=(int)pos,nx=ip+1,lend=r[2]+r[3],s0=D[ip],s1;double fr=pos-ip;
+    if(r[3]){if(nx>=lend)nx-=r[3];s1=D[nx];}else s1=nx<r[1]?D[nx]:0;
     double v=(s0+(s1-s0)*fr)*env*g;
     ds_L[t]+=v*pl;ds_R[t]+=v*pr;
     env+=d;if(env>=1){env=1;d=0;}if(env<=0)on=0;
-    pos+=rate;if(r[4]){while(pos>=lend)pos-=r[4];}else if(pos>=r[2])on=0;
+    pos+=rate;if(r[3]){while(pos>=lend)pos-=r[3];}else if(pos>=r[1])on=0;
    }
   }
  }
  // pass 2: stereo paulstretch
  const int N=DS_N,H=N/2,M=(2*N>>(10-DS_DF))-1;
- for(int k=0;k<N*5/2;k++)ds_tab[k]=ds_sin(3.141592653589793*k/N);
+ double ts=0,tc=1;
+ for(int k=0;k<N*5/2;k++){ds_tab[k]=ts;double tt=tc*ds_k[3].d-ts*ds_k[2].d;ts=ts*ds_k[3].d+tc*ds_k[2].d;tc=tt;}
  unsigned s=DS_SEED;double g=DS_GAIN/(200.0*N),disp=H*10/(double)DS_ST;int o=0;
  for(double sp=0;sp<DS_DRY;sp+=disp,o+=H){
   int p=(int)sp;
-  for(int i=0;i<N;i++){int j=p+i;double w=ds_tab[i];ds_re[i]=j<DS_DRY?ds_L[j]*w:0;ds_im[i]=j<DS_DRY?ds_R[j]*w:0;}
+  for(int i=0;i<N;i++){double w=ds_tab[i];ds_re[i]=ds_L[p+i]*w;ds_im[i]=ds_R[p+i]*w;}
   ds_fft(-1);
   ds_re[0]=0;ds_im[0]=0;ds_re[H]=0;ds_im[H]=0;
   for(int k=1;k<H;k++){

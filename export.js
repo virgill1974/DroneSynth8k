@@ -3,12 +3,15 @@
   'use strict';
 
   function exportCpp(c, hash) {
+    var N = 1 << c.win, sc = Engine().sinCos(N), W = Engine().widthMask(c);
+    var K = [0.6931471805599453, 3.321928094887362 / 13107200, sc[0], sc[1]].map(function (x) { return '{' + dq(x) + 'ull}'; }).join(',');
     var rs = [0], rg = [];
     c.ins.forEach(function (I) {
       I.rg.forEach(function (r) { rg.push([r.hi, r.off, r.len, r.ls, r.ll, r.unity, r.fine, r.rate, r.attn]); });
       rs.push(rg.length);
     });
     if (!rg.length) rg.push([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    check16(rg);
     var pat = c.pat.map(function (p) { return '{' + p.join(',') + '}'; }).join(',\n');
     var ins = c.ins.map(function (I) { return '{' + [I.att, I.rel, I.vol, I.pan].join(',') + '}'; }).join(',');
     var L = [];
@@ -38,26 +41,22 @@
 pat + '};',
 'static const int ds_ins[8][4]={' + ins + '};',
 'static const int ds_rs[9]={' + rs.join(',') + '};',
-'static const int ds_rg[][9]={' + rg.map(function (r) { return '{' + r.join(',') + '}'; }).join(',') + '};',
+'// regions: hi,len,loop start,loop len,unity,fine,rate (16 bit) + file offset, attenuation (32 bit)',
+'static const short ds_rg[][7]={' + rg.map(function (r) { return '{' + [r[0], r[2], r[3], r[4], r[5], r[6], r[7]].join(',') + '}'; }).join(',') + '};',
+'static const int ds_rgi[][2]={' + rg.map(function (r) { return '{' + r[1] + ',' + r[8] + '}'; }).join(',') + '};',
 'static unsigned char ds_dls[DS_DLS_SIZE];',
-'static double ds_L[DS_DRY],ds_R[DS_DRY],ds_re[DS_N],ds_im[DS_N],ds_tab[DS_N*5/2];',
+'static double ds_L[DS_DRY+DS_N],ds_R[DS_DRY+DS_N],ds_re[DS_N],ds_im[DS_N],ds_tab[DS_N*5/2]; // dry buffers zero padded',
 'static float ds_out[DS_OUT_LEN*2];',
 '',
 '#include <emmintrin.h>',
 'static double ds_sqrt(double x){return _mm_cvtsd_f64(_mm_sqrt_sd(_mm_set_sd(x),_mm_set_sd(x)));}',
-'static double ds_sin(double x){',
-' while(x>3.141592653589793)x-=6.283185307179586;',
-' while(x<-3.141592653589793)x+=6.283185307179586;',
-' if(x>1.5707963267948966)x=3.141592653589793-x;else if(x<-1.5707963267948966)x=-3.141592653589793-x;',
-' double x2=x*x,r=1;',
-' for(int k=16;k>0;k-=2)r=1-x2/((k+1)*k)*r;',
-' return x*r;',
-'}',
+'// exact double constants (bit patterns): ln2, dls attenuation scale, sin(pi/N), cos(pi/N)',
+'static const union{unsigned long long u;double d;}ds_k[4]={' + K + '};',
 'static double ds_exp2(double x){',
 ' double s=1;',
 ' while(x<0){x+=1;s*=0.5;}',
 ' while(x>=1){x-=1;s*=2;}',
-' double t=x*0.6931471805599453,r=1;',
+' double t=x*ds_k[0].d,r=1;',
 ' for(int k=14;k>0;k--)r=1+t/k*r;',
 ' return s*r;',
 '}',
@@ -91,36 +90,37 @@ pat + '};',
 ' ds_load();',
 ' // pass 1: tracker',
 ' for(int c=0;c<8;c++){',
-'  const int*I=ds_ins[c],*r=ds_rg[0];const short*D=0;int on=0,t=0;',
+'  const int*I=ds_ins[c],*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;',
 '  double pos=0,rate=0,env=0,d=0,g=0,pl=(127-I[3])/127.0,pr=I[3]/127.0;',
 '  for(int row=0;row<=DS_ROWS;row++){',
 '   int e=row<DS_ROWS?ds_pat[c][row]:255;',
 '   if(e==255){if(on){if(I[1]>0)d=-env/I[1];else on=0;}}',
 '   else if(e){',
-'    for(int k=ds_rs[c];k<ds_rs[c+1];k++){r=ds_rg[k];if(e<=r[0])break;}',
-'    D=(const short*)(ds_dls+r[1]);on=1;pos=0;',
-'    rate=ds_exp2((e-r[5])/12.0+r[6]/1200.0)*r[7]/44100.0;',
-'    g=I[2]/127.0*ds_exp2(r[8]*(3.321928094887362/13107200.0))/32768.0;',
+'    for(int k=ds_rs[c];k<ds_rs[c+1];k++){r=ds_rg[k];ri=ds_rgi[k];if(e<=r[0])break;}',
+'    D=(const short*)(ds_dls+ri[0]);on=1;pos=0;',
+'    rate=ds_exp2((e-r[4])/12.0+r[5]/1200.0)*r[6]/44100.0;',
+'    g=I[2]/127.0*ds_exp2(ri[1]*ds_k[1].d)/32768.0;',
 '    if(I[0]>0){env=0;d=1.0/I[0];}else{env=1;d=0;}',
 '   }',
 '   int end=row<DS_ROWS?t+DS_ROWLEN:DS_DRY;',
 '   for(;t<end;t++)if(on){',
-'    int ip=(int)pos,nx=ip+1,lend=r[3]+r[4],s0=D[ip],s1;double fr=pos-ip;',
-'    if(r[4]){if(nx>=lend)nx-=r[4];s1=D[nx];}else s1=nx<r[2]?D[nx]:0;',
+'    int ip=(int)pos,nx=ip+1,lend=r[2]+r[3],s0=D[ip],s1;double fr=pos-ip;',
+'    if(r[3]){if(nx>=lend)nx-=r[3];s1=D[nx];}else s1=nx<r[1]?D[nx]:0;',
 '    double v=(s0+(s1-s0)*fr)*env*g;',
 '    ds_L[t]+=v*pl;ds_R[t]+=v*pr;',
 '    env+=d;if(env>=1){env=1;d=0;}if(env<=0)on=0;',
-'    pos+=rate;if(r[4]){while(pos>=lend)pos-=r[4];}else if(pos>=r[2])on=0;',
+'    pos+=rate;if(r[3]){while(pos>=lend)pos-=r[3];}else if(pos>=r[1])on=0;',
 '   }',
 '  }',
 ' }',
 ' // pass 2: stereo paulstretch',
 ' const int N=DS_N,H=N/2,M=(2*N>>(10-DS_DF))-1;',
-' for(int k=0;k<N*5/2;k++)ds_tab[k]=ds_sin(3.141592653589793*k/N);',
+' double ts=0,tc=1;',
+' for(int k=0;k<N*5/2;k++){ds_tab[k]=ts;double tt=tc*ds_k[3].d-ts*ds_k[2].d;ts=ts*ds_k[3].d+tc*ds_k[2].d;tc=tt;}',
 ' unsigned s=DS_SEED;double g=DS_GAIN/(200.0*N),disp=H*10/(double)DS_ST;int o=0;',
 ' for(double sp=0;sp<DS_DRY;sp+=disp,o+=H){',
 '  int p=(int)sp;',
-'  for(int i=0;i<N;i++){int j=p+i;double w=ds_tab[i];ds_re[i]=j<DS_DRY?ds_L[j]*w:0;ds_im[i]=j<DS_DRY?ds_R[j]*w:0;}',
+'  for(int i=0;i<N;i++){double w=ds_tab[i];ds_re[i]=ds_L[p+i]*w;ds_im[i]=ds_R[p+i]*w;}',
 '  ds_fft(-1);',
 '  ds_re[0]=0;ds_im[0]=0;ds_re[H]=0;ds_im[H]=0;',
 '  for(int k=1;k<H;k++){',
@@ -129,7 +129,8 @@ pat + '};',
 '   a=ai+bi;b=ar-br;',
 '   double mR=ds_sqrt(a*a+b*b);',
 '   s=s*1103515245u+12345u;int q=(s>>8)&M;double sL=ds_tab[q],cL=ds_tab[q+H];',
-'   s=s*1103515245u+12345u;q=(s>>8)&M;double sR=ds_tab[q],cR=ds_tab[q+H];',
+(W < 0 ? '   s=s*1103515245u+12345u;q=(s>>8)&M;double sR=ds_tab[q],cR=ds_tab[q+H];' :
+  '   s=s*1103515245u+12345u;q=(q+((s>>8)&' + W + '))&M;double sR=ds_tab[q],cR=ds_tab[q+H];'),
 '   double x=mL*cL,y=mL*sL,u=mR*cR,v=mR*sR;',
 '   ds_re[k]=x-v;ds_im[k]=y+u;ds_re[k2]=x+v;ds_im[k2]=u-y;',
 '  }',
@@ -162,6 +163,13 @@ pat + '};',
   // ---------- NASM export: 32-bit x87, same operation order as engine.js ----------
   // Bit-exactness: FPU precision control = 53 bit (fldcw 0x027F) makes fadd/fsub/fmul/fdiv/fsqrt round exactly
   // like IEEE double. All double constants are emitted as exact bit patterns. (int) uses fisttp (SSE3).
+  // region fields except file offset/attenuation are stored as 16 bit (true for every gm.dls sample)
+  function check16(rg) {
+    rg.forEach(function (r) {
+      [0, 2, 3, 4, 5, 6, 7].forEach(function (i) { if (r[i] < -32768 || r[i] > 32767) throw new Error('Sample-Wert passt nicht in 16 Bit (Region-Feld ' + i + ': ' + r[i] + ')'); });
+    });
+  }
+  function Engine() { return G.Engine || require('./engine.js').Engine; }
   function dq(x) {
     var dv = new DataView(new ArrayBuffer(8)), h = function (v) { return ('0000000' + v.toString(16)).slice(-8); };
     dv.setFloat64(0, x);
@@ -174,16 +182,19 @@ pat + '};',
   }
 
   function exportAsm(c, hash) {
-    var rs = [0], rg = [], pat = [];
+    var rs = [0], rg = [], pat = [], ins = [];
     c.ins.forEach(function (I) {
       I.rg.forEach(function (r) { rg.push([r.hi, r.off, r.len, r.ls, r.ll, r.unity, r.fine, r.rate, r.attn]); });
       rs.push(rg.length);
+      ins.push(I.att, I.rel, I.vol, I.pan);
     });
     if (!rg.length) rg.push([0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    check16(rg);
     c.pat.forEach(function (p) { pat = pat.concat(p); });
-    var ins = [];
-    c.ins.forEach(function (I) { ins.push(I.att, I.rel, I.vol, I.pan); });
-    var N = 1 << c.win, PI = 3.141592653589793;
+    var N = 1 << c.win, sc = Engine().sinCos(N), W = Engine().widthMask(c);
+    var rngR = W < 0 ? '' : `    and eax, ${W}
+    add eax, ebx
+`;
     return `; DroneSynth8k ASM export (generated). NASM, 32-bit x86, x87 FPU. Pass 1: gm.dls tracker, pass 2: stereo Paulstretch.
 ; Bit-exact with the web tool and the C++ export. Expected FNV-1a hash of ds_out: ${hash || '?'}
 ; gm.dls size when exported: ${c.dlsSize} bytes (sample offsets below are absolute file offsets).
@@ -199,9 +210,7 @@ bits 32
 %define DS_N ${N}
 %define DS_H ${N >> 1}
 %define DS_M ${(2 * N >> (10 - c.df)) - 1}
-%define DS_ST ${c.st}
 %define DS_SEED ${c.seed}
-%define DS_GAIN ${c.gain}
 %define DS_OUT_LEN ${c.outLen}
 %define DS_DLS_SIZE ${c.dlsSize}
 %ifndef DS_GMDLS
@@ -226,37 +235,60 @@ extern __imp__waveOutOpen@24, __imp__waveOutPrepareHeader@12, __imp__waveOutWrit
 %ifndef DS_NOLOAD
 extern __imp__CreateFileA@28, __imp__ReadFile@20
 %endif
+%define V(x) ebp+x-ds_vb           ; scalars/constants: ebp-relative, 1-byte displacement
 
 section .data
-ds_cw:     dw 0x027F
-ds_c12:    dd 12
-ds_c127:   dd 127
-ds_c1200:  dd 1200
-ds_c44100: dd 44100
-ds_c32768: dd 32768
-ds_cN:     dd DS_N
-ds_c200N:  dd ${200 * N}
-ds_cH10:   dd ${(N >> 1) * 10}
-ds_cST:    dd DS_ST
-ds_cDRY:   dd DS_DRY
-ds_cGAIN:  dd DS_GAIN
-ds_PI:     dq ${dq(PI)}
-ds_mPI:    dq ${dq(-PI)}
-ds_PI_2:   dq ${dq(1.5707963267948966)}
-ds_mPI_2:  dq ${dq(-1.5707963267948966)}
-ds_2PI:    dq ${dq(6.283185307179586)}
-ds_LN2:    dq ${dq(0.6931471805599453)}
-ds_ATT:    dq ${dq(3.321928094887362 / 13107200)}
-ds_half:   dq ${dq(0.5)}
-ds_m1:     dq ${dq(-1)}
+align 8
+ds_v:                              ; ---- scalar block, ebp = ds_vb ----
+v_ln2:   dq ${dq(0.6931471805599453)}
+v_att:   dq ${dq(3.321928094887362 / 13107200)}
+v_S:     dq ${dq(sc[0])}           ; sin(pi/N)
+v_C:     dq ${dq(sc[1])}           ; cos(pi/N)
+v_half:  dq ${dq(0.5)}
+v_m1:    dq ${dq(-1)}
+v_pos:   dq 0
+v_rate:  dq 0
+v_env:   dq 0
+v_d:     dq 0
+v_g:     dq 0
+v_pl:    dq 0
+v_pr:    dq 0
+v_sp:    dq 0
+v_disp:  dq 0
+v_gg:    dq 0
+v_sgn:   dq 0
+c12:     dd 12
+c127:    dd 127
+c1200:   dd 1200
+c44100:  dd 44100
+c32768:  dd 32768
+c200N:   dd ${200 * N}
+cH10:    dd ${(N >> 1) * 10}
+cST:     dd ${c.st}
+cDRY:    dd DS_DRY
+cGAIN:   dd ${c.gain}
+i_tmp:   dd 0
+i_k:     dd 0
+i_ip:    dd 0
+i_s0:    dd 0
+i_on:    dd 0
+i_row:   dd 0
+i_end:   dd 0
+i_iptr:  dd 0
+i_seed:  dd DS_SEED
+i_p:     dd 0
+i_st:    dd 0
+i_ch:    dd 0
+cw:      dw 0x027F
+ds_vb equ ds_v+128
 ds_pat:
 ${lines(pat, 32, 'db')}
 ds_ins:
 ${lines(ins, 16, 'dd')}
 ds_rs:
 ${lines(rs, 9, 'dd')}
-ds_rg:     ; hi, file offset, len, loop start, loop len, unity, fine, rate, attenuation
-${rg.map(function (r) { return '  dd ' + r.join(','); }).join('\n')}
+ds_rg:     ; 22 bytes each: hi(w), file offset(d), len, loop start, loop len, unity, fine, rate (w), attenuation(d)
+${rg.map(function (r) { return '  dw ' + r[0] + '\n  dd ' + r[1] + '\n  dw ' + r.slice(2, 8).join(',') + '\n  dd ' + r[8]; }).join('\n')}
 %ifndef DS_NOLOAD
 ds_path:   db DS_GMDLS, 0
 %endif
@@ -266,41 +298,17 @@ ds_wfx:    dw 3, 2
            dw 8, 32, 0
 ds_hdr:    dd ds_out, DS_OUT_LEN*8, 0, 0, 0, 0, 0, 0
 ds_mmt:    dd 2, 0, 0
+ds_wo:     dd 0
 %endif
 
 section .bss
 alignb 8
-ds_L:      resq DS_DRY
-ds_R:      resq DS_DRY
+ds_L:      resq DS_DRY+DS_N         ; zero padded: window reads past the end need no check
+ds_R:      resq DS_DRY+DS_N
 ds_re:     resq DS_N
 ds_im:     resq DS_N
 ds_tab:    resq DS_N*5/2
-v_pos:     resq 1
-v_rate:    resq 1
-v_env:     resq 1
-v_d:       resq 1
-v_g:       resq 1
-v_pl:      resq 1
-v_pr:      resq 1
-v_sp:      resq 1
-v_disp:    resq 1
-v_gg:      resq 1
-v_sgn:     resq 1
 ds_out:    resd DS_OUT_LEN*2
-i_tmp:     resd 1
-i_k:       resd 1
-i_ip:      resd 1
-i_s0:      resd 1
-i_on:      resd 1
-i_row:     resd 1
-i_end:     resd 1
-i_iptr:    resd 1
-i_seed:    resd 1
-i_p:       resd 1
-i_st:      resd 1
-%ifndef DS_NO_PLAYER
-ds_wo:     resd 1
-%endif
 ds_dls:    resb DS_DLS_SIZE
 
 section .text
@@ -312,7 +320,7 @@ ds_exp2:
     jbe .b
     fld1
     faddp st2, st0
-    fmul qword [ds_half]
+    fmul qword [V(v_half)]
     jmp .a
 .b: fld1
     fcomip st0, st2
@@ -322,12 +330,13 @@ ds_exp2:
     fadd st0, st0
     jmp .b
 .c: fxch
-    fmul qword [ds_LN2]
+    fmul qword [V(v_ln2)]
     fld1
-    mov ecx, 14
-.t: mov [i_k], ecx
+    push 14
+    pop ecx
+.t: mov [V(i_k)], ecx
     fld st1
-    fidiv dword [i_k]
+    fidiv dword [V(i_k)]
     fmulp st1, st0
     fld1
     faddp st1, st0
@@ -336,48 +345,10 @@ ds_exp2:
     fmulp st1, st0
     ret
 
-; st0 = x -> st0 = sin(x) (engine.js msin). clobbers eax, ecx
-ds_sin:
-.a: fld qword [ds_PI]
-    fcomip st0, st1
-    jae .b
-    fsub qword [ds_2PI]
-    jmp .a
-.b: fld qword [ds_mPI]
-    fcomip st0, st1
-    jbe .c
-    fadd qword [ds_2PI]
-    jmp .b
-.c: fld qword [ds_PI_2]
-    fcomip st0, st1
-    jae .d
-    fsubr qword [ds_PI]
-    jmp .e
-.d: fld qword [ds_mPI_2]
-    fcomip st0, st1
-    jbe .e
-    fsubr qword [ds_mPI]
-.e: fld st0
-    fmul st0, st0
-    fld1
-    mov ecx, 16
-.t: lea eax, [ecx+1]
-    imul eax, ecx
-    mov [i_k], eax
-    fld st1
-    fidiv dword [i_k]
-    fmulp st1, st0
-    fld1
-    fsubrp st1, st0
-    sub ecx, 2
-    jnz .t
-    fstp st1
-    fmulp st1, st0
-    ret
-
-; in-place radix-2 FFT of ds_re/ds_im, [v_sgn] = -1 forward, +1 inverse. clobbers all GPRs
+; in-place radix-2 FFT of ds_re/ds_im, [v_sgn] = -1 forward, +1 inverse. clobbers eax..edi (not ebp)
 ds_fft:
-    mov ecx, 1
+    xor ecx, ecx
+    inc ecx
     xor edx, edx
 .r: mov eax, DS_N/2
 .r1: test edx, eax
@@ -399,20 +370,21 @@ ds_fft:
 .r3: inc ecx
     cmp ecx, DS_N
     jl .r
-    mov esi, 2
-    mov dword [i_st], DS_N/2
-.l: mov ebp, esi
-    shr ebp, 1
+    push 2
+    pop esi
+    mov dword [V(i_st)], DS_N/2
+.l: mov ebx, esi
+    shr ebx, 1
     xor ecx, ecx
 .i: xor edx, edx
 .k: mov eax, edx
-    imul eax, [i_st]
+    imul eax, [V(i_st)]
     add eax, eax
     fld qword [ds_tab+eax*8+DS_N*4]
     fld qword [ds_tab+eax*8]
-    fmul qword [v_sgn]
+    fmul qword [V(v_sgn)]
     lea eax, [ecx+edx]
-    lea edi, [eax+ebp]
+    lea edi, [eax+ebx]
     fld qword [ds_re+edi*8]
     fmul st0, st2
     fld qword [ds_im+edi*8]
@@ -435,12 +407,12 @@ ds_fft:
     fstp qword [ds_re+eax*8]
     fcompp
     inc edx
-    cmp edx, ebp
+    cmp edx, ebx
     jl .k
     add ecx, esi
     cmp ecx, DS_N
     jl .i
-    shr dword [i_st], 1
+    shr dword [V(i_st)], 1
     add esi, esi
     cmp esi, DS_N
     jle .l
@@ -448,7 +420,8 @@ ds_fft:
 
 ds_render:
     pushad
-    fldcw [ds_cw]
+    mov ebp, ds_vb
+    fldcw [V(cw)]
 %ifndef DS_NOLOAD
     xor eax, eax
     push eax
@@ -460,117 +433,118 @@ ds_render:
     push ds_path
     call [__imp__CreateFileA@28]
     push 0
-    push i_tmp
+    lea ecx, [V(i_tmp)]
+    push ecx
     push DS_DLS_SIZE
     push ds_dls
     push eax
     call [__imp__ReadFile@20]
 %endif
 ; ---- pass 1: tracker -> ds_L/ds_R (double) ----
-    xor ebp, ebp
-.ch: mov eax, ebp
+.ch: mov eax, [V(i_ch)]
     shl eax, 4
     add eax, ds_ins
-    mov [i_iptr], eax
-    mov edx, 127
+    mov [V(i_iptr)], eax
+    push 127
+    pop edx
     sub edx, [eax+12]
-    mov [i_tmp], edx
-    fild dword [i_tmp]
-    fidiv dword [ds_c127]
-    fstp qword [v_pl]
+    mov [V(i_tmp)], edx
+    fild dword [V(i_tmp)]
+    fidiv dword [V(c127)]
+    fstp qword [V(v_pl)]
     fild dword [eax+12]
-    fidiv dword [ds_c127]
-    fstp qword [v_pr]
+    fidiv dword [V(c127)]
+    fstp qword [V(v_pr)]
     xor edi, edi
-    mov [i_on], edi
-    mov [i_row], edi
-.row: mov eax, [i_row]
+    mov [V(i_on)], edi
+    mov [V(i_row)], edi
+.row: mov eax, [V(i_row)]
     mov edx, 255
     cmp eax, DS_ROWS
     jae .ev
-    imul edx, ebp, DS_ROWS
+    imul edx, [V(i_ch)], DS_ROWS
     movzx edx, byte [ds_pat+edx+eax]
-.ev: mov eax, [i_iptr]
+.ev: mov eax, [V(i_iptr)]
     cmp edx, 255
     jne .on
-    cmp dword [i_on], 0
+    cmp dword [V(i_on)], 0
     je .evd
     cmp dword [eax+4], 0
     jle .kill
-    fld qword [v_env]
+    fld qword [V(v_env)]
     fchs
     fidiv dword [eax+4]
-    fstp qword [v_d]
+    fstp qword [V(v_d)]
     jmp .evd
-.kill: mov dword [i_on], 0
+.kill: and dword [V(i_on)], 0
     jmp .evd
 .on: test edx, edx
     jz .evd
-    mov ecx, [ds_rs+ebp*4]
-.pk: imul esi, ecx, 36
+    mov ecx, [V(i_ch)]
+    lea ebx, [ds_rs+ecx*4]
+    mov ecx, [ebx]
+.pk: imul esi, ecx, 22
     add esi, ds_rg
-    cmp edx, [esi]
+    cmp dl, [esi]
     jle .pkd
     inc ecx
-    cmp ecx, [ds_rs+ebp*4+4]
+    cmp ecx, [ebx+4]
     jl .pk
-.pkd: mov ebx, [esi+4]
+.pkd: mov ebx, [esi+2]
     add ebx, ds_dls
-    mov dword [i_on], 1
+    mov dword [V(i_on)], 1
     fldz
-    fstp qword [v_pos]
-    sub edx, [esi+20]
-    mov [i_tmp], edx
-    fild dword [i_tmp]
-    fidiv dword [ds_c12]
-    fild dword [esi+24]
-    fidiv dword [ds_c1200]
+    fstp qword [V(v_pos)]
+    sub dx, [esi+12]
+    mov [V(i_tmp)], dx
+    fild word [V(i_tmp)]
+    fidiv dword [V(c12)]
+    fild word [esi+14]
+    fidiv dword [V(c1200)]
     faddp st1, st0
     call ds_exp2
-    fimul dword [esi+28]
-    fidiv dword [ds_c44100]
-    fstp qword [v_rate]
-    mov eax, [i_iptr]
+    fimul word [esi+16]
+    fidiv dword [V(c44100)]
+    fstp qword [V(v_rate)]
+    mov eax, [V(i_iptr)]
     fild dword [eax+8]
-    fidiv dword [ds_c127]
-    fild dword [esi+32]
-    fmul qword [ds_ATT]
+    fidiv dword [V(c127)]
+    fild dword [esi+18]
+    fmul qword [V(v_att)]
     call ds_exp2
     fmulp st1, st0
-    fidiv dword [ds_c32768]
-    fstp qword [v_g]
-    mov eax, [i_iptr]
+    fidiv dword [V(c32768)]
+    fstp qword [V(v_g)]
+    mov eax, [V(i_iptr)]
+    fld1
+    fldz
     cmp dword [eax], 0
     jle .noat
-    fld1
-    fidiv dword [eax]
-    fstp qword [v_d]
-    fldz
-    fstp qword [v_env]
+    fstp qword [V(v_env)]      ; env = 0
+    fidiv dword [eax]          ; d = 1/att
+    fstp qword [V(v_d)]
     jmp .evd
-.noat: fld1
-    fstp qword [v_env]
-    fldz
-    fstp qword [v_d]
-.evd: mov eax, [i_row]
+.noat: fstp qword [V(v_d)]     ; d = 0
+    fstp qword [V(v_env)]      ; env = 1
+.evd: mov eax, [V(i_row)]
     mov ecx, DS_DRY
     cmp eax, DS_ROWS
     jae .se
     lea ecx, [edi+DS_ROWLEN]
-.se: mov [i_end], ecx
-.s: cmp edi, [i_end]
+.se: mov [V(i_end)], ecx
+.s: cmp edi, [V(i_end)]
     jge .rn
-    cmp dword [i_on], 0
+    cmp dword [V(i_on)], 0
     je .sn
-    fld qword [v_pos]
-    fisttp dword [i_ip]
-    mov eax, [i_ip]
+    fld qword [V(v_pos)]
+    fisttp dword [V(i_ip)]
+    mov eax, [V(i_ip)]
     movsx edx, word [ebx+eax*2]
-    mov [i_s0], edx
+    mov [V(i_s0)], edx
     inc eax
-    mov ecx, [esi+16]
+    movzx ecx, word [esi+10]
     jecxz .nl
-    mov edx, [esi+12]
+    movzx edx, word [esi+8]
     add edx, ecx
     cmp eax, edx
     jl .l1
@@ -578,122 +552,117 @@ ds_render:
 .l1: movsx edx, word [ebx+eax*2]
     jmp .hv
 .nl: xor edx, edx
-    cmp eax, [esi+8]
+    cmp ax, [esi+6]
     jge .hv
     movsx edx, word [ebx+eax*2]
-.hv: sub edx, [i_s0]
-    mov [i_tmp], edx
-    fld qword [v_pos]
-    fisub dword [i_ip]
-    fimul dword [i_tmp]
-    fiadd dword [i_s0]
-    fmul qword [v_env]
-    fmul qword [v_g]
+.hv: sub edx, [V(i_s0)]
+    mov [V(i_tmp)], edx
+    fld qword [V(v_pos)]
+    fisub dword [V(i_ip)]
+    fimul dword [V(i_tmp)]
+    fiadd dword [V(i_s0)]
+    fmul qword [V(v_env)]
+    fmul qword [V(v_g)]
     fld st0
-    fmul qword [v_pl]
+    fmul qword [V(v_pl)]
     fadd qword [ds_L+edi*8]
     fstp qword [ds_L+edi*8]
-    fmul qword [v_pr]
+    fmul qword [V(v_pr)]
     fadd qword [ds_R+edi*8]
     fstp qword [ds_R+edi*8]
-    fld qword [v_env]
-    fadd qword [v_d]
+    fld qword [V(v_env)]
+    fadd qword [V(v_d)]
     fld1
     fcomip st0, st1
     ja .e1
     fstp st0
     fld1
     fldz
-    fstp qword [v_d]
-.e1: fst qword [v_env]
+    fstp qword [V(v_d)]
+.e1: fst qword [V(v_env)]
     fldz
     fcomip st0, st1
     fstp st0
     jb .e2
-    mov dword [i_on], 0
-.e2: fld qword [v_pos]
-    fadd qword [v_rate]
-    mov ecx, [esi+16]
+    and dword [V(i_on)], 0
+.e2: fld qword [V(v_pos)]
+    fadd qword [V(v_rate)]
+    movzx ecx, word [esi+10]
     jecxz .p2
-    mov edx, [esi+12]
+    movzx edx, word [esi+8]
     add edx, ecx
-    mov [i_tmp], edx
-.p1: fild dword [i_tmp]
+    mov [V(i_tmp)], edx
+.p1: fild dword [V(i_tmp)]
     fcomip st0, st1
     ja .p3
-    fisub dword [esi+16]
+    fisub word [esi+10]
     jmp .p1
-.p2: fild dword [esi+8]
+.p2: fild word [esi+6]
     fcomip st0, st1
     ja .p3
-    mov dword [i_on], 0
-.p3: fstp qword [v_pos]
+    and dword [V(i_on)], 0
+.p3: fstp qword [V(v_pos)]
 .sn: inc edi
     jmp .s
-.rn: inc dword [i_row]
-    cmp dword [i_row], DS_ROWS
+.rn: inc dword [V(i_row)]
+    cmp dword [V(i_row)], DS_ROWS
     jbe .row
-    inc ebp
-    cmp ebp, 8
+    inc dword [V(i_ch)]
+    cmp dword [V(i_ch)], 8
     jl .ch
 ; ---- pass 2: stereo paulstretch -> ds_out (float) ----
+    fldz                           ; sine table by rotation: tab[k] = sin(pi*k/N)
+    fld1
     xor ecx, ecx
-.tb: mov [i_tmp], ecx
-    fild dword [i_tmp]
-    fmul qword [ds_PI]
-    fidiv dword [ds_cN]
-    push ecx
-    call ds_sin
-    pop ecx
-    fstp qword [ds_tab+ecx*8]
+.tb: fxch
+    fst qword [ds_tab+ecx*8]
+    fld st1
+    fmul qword [V(v_C)]
+    fld st1
+    fmul qword [V(v_S)]
+    fsubp st1, st0
+    fxch st1
+    fmul qword [V(v_C)]
+    fxch st2
+    fmul qword [V(v_S)]
+    faddp st2, st0
     inc ecx
     cmp ecx, DS_N*5/2
     jl .tb
-    mov dword [i_seed], DS_SEED
-    fild dword [ds_cGAIN]
-    fidiv dword [ds_c200N]
-    fstp qword [v_gg]
-    fild dword [ds_cH10]
-    fidiv dword [ds_cST]
-    fstp qword [v_disp]
-    fldz
-    fstp qword [v_sp]
+    fcompp
+    fild dword [V(cGAIN)]
+    fidiv dword [V(c200N)]
+    fstp qword [V(v_gg)]
+    fild dword [V(cH10)]
+    fidiv dword [V(cST)]
+    fstp qword [V(v_disp)]
     xor edi, edi
-.f: fld qword [v_sp]
-    fild dword [ds_cDRY]
+.f: fld qword [V(v_sp)]
+    fild dword [V(cDRY)]
     fcomip st0, st1
-    fisttp dword [i_p]
+    fisttp dword [V(i_p)]
     jbe .fd
     xor ecx, ecx
-.w: mov eax, [i_p]
+.w: mov eax, [V(i_p)]
     add eax, ecx
     fld qword [ds_tab+ecx*8]
-    cmp eax, DS_DRY
-    jge .wz
     fld st0
     fmul qword [ds_L+eax*8]
     fstp qword [ds_re+ecx*8]
     fmul qword [ds_R+eax*8]
     fstp qword [ds_im+ecx*8]
-    jmp .wn
-.wz: fstp st0
-    fldz
-    fst qword [ds_re+ecx*8]
-    fstp qword [ds_im+ecx*8]
-.wn: inc ecx
+    inc ecx
     cmp ecx, DS_N
     jl .w
-    fld qword [ds_m1]
-    fstp qword [v_sgn]
-    pushad
-    call ds_fft
-    popad
+    fld qword [V(v_m1)]
+    call .fft
     fldz
     fst qword [ds_re]
     fst qword [ds_im]
     fst qword [ds_re+DS_H*8]
     fstp qword [ds_im+DS_H*8]
-    mov ecx, 1
+    xor ecx, ecx
+    inc ecx
 .k: mov edx, DS_N
     sub edx, ecx
     fld qword [ds_re+ecx*8]
@@ -714,7 +683,7 @@ ds_render:
     fmul st0, st0
     faddp st1, st0
     fsqrt
-    mov eax, [i_seed]
+    mov eax, [V(i_seed)]
     imul eax, eax, 1103515245
     add eax, 12345
     mov ebx, eax
@@ -722,9 +691,9 @@ ds_render:
     and ebx, DS_M
     imul eax, eax, 1103515245
     add eax, 12345
-    mov [i_seed], eax
+    mov [V(i_seed)], eax
     shr eax, 8
-    and eax, DS_M
+${rngR}    and eax, DS_M
     fld qword [ds_tab+ebx*8+DS_H*8]
     fmul st0, st2
     fld qword [ds_tab+ebx*8]
@@ -752,13 +721,10 @@ ds_render:
     cmp ecx, DS_H
     jl .k
     fld1
-    fstp qword [v_sgn]
-    pushad
-    call ds_fft
-    popad
+    call .fft
     xor ecx, ecx
 .o: fld qword [ds_tab+ecx*8]
-    fmul qword [v_gg]
+    fmul qword [V(v_gg)]
     lea eax, [edi+ecx]
     fld st0
     fmul qword [ds_re+ecx*8]
@@ -771,13 +737,17 @@ ds_render:
     cmp ecx, DS_N
     jl .o
     add edi, DS_H
-    fld qword [v_sp]
-    fadd qword [v_disp]
-    fstp qword [v_sp]
+    fld qword [V(v_sp)]
+    fadd qword [V(v_disp)]
+    fstp qword [V(v_sp)]
     jmp .f
+.fft: fstp qword [V(v_sgn)]        ; st0 = sign -> run fft, keep all GPRs
+    pushad
+    call ds_fft
+    popad
+    ret
 .fd: popad
     ret
-
 %ifdef DS_VERIFY
 ds_hash:
     mov ecx, DS_OUT_LEN*2

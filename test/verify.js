@@ -36,6 +36,11 @@ var songs = {
     s.pat[1][3] = 42; s.pat[1][11] = 38; s.pat[2][0] = 57; s.pat[2][12] = 255;
     s.ps = { win: 11, st: 25, seed: 99, gain: 120, df: 4 };
   }),
+  width: song(function (s) {
+    s.pat[0][0] = 60; s.pat[1][2] = 67; s.ins[1].prog = 89; s.ins[0].pan = 0; s.ins[1].pan = 127;
+    s.ps = { win: 12, st: 50, seed: 5, gain: 100, df: 9, sw: 3 };
+  }),
+  mono: song(function (s) { s.pat[0][0] = 48; s.ps = { win: 11, st: 30, seed: 1, gain: 100, df: 10, sw: 0 }; }),
   empty: song(function () {})
 };
 
