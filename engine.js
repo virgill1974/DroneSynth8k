@@ -38,15 +38,17 @@
   function msToS(ms) { return Math.floor(ms * 441 / 10); }
 
   // song -> compiled integer description (exactly what gets exported)
-  // song: { bpm, lpb, rows, pat[8][rows], ins[8]{prog,att,rel,vol,pan}, ps{win,st,seed,gain} }
+  // song: { bpm, lpb, rows, pat[8][rows], ins[8]{prog,att,rel,vol,pan}, ps{win,st,seed,gain}, env }
+  // env === false: no attack, release or note-off, volume fixed at 100 %. The exports then omit that code.
   function compile(song, dls, opt) {
     opt = opt || {};
     var rows = song.rows, rowLen = opt.rowLen || Math.floor(2646000 / (song.bpm * song.lpb));
-    var c = { rows: rows, rowLen: rowLen, pat: [], ins: [], warn: [] }, tail = 0;
+    var env = song.env !== false, c = { rows: rows, rowLen: rowLen, env: env, pat: [], ins: [], warn: [] }, tail = 0;
     for (var ch = 0; ch < 8; ch++) {
       var I = song.ins[ch], full = (dls && dls.ins[I.prog]) || [], kit = !!(dls && dls.drum[I.prog]), used = [], p = [], chosen = {};
       for (var row = 0; row < rows; row++) {
         var e = song.pat[ch][row] | 0;
+        if (e === 255 && !env) e = 0;
         if (e > 0 && e < 128) {
           var r = null;
           for (var k = 0; k < full.length; k++) if (e >= full[k].lo && e <= full[k].hi) { r = full[k]; break; }
@@ -72,7 +74,7 @@
         if (ls + ll > w.len) ll = w.len - ls;
         return { hi: r.hi, off: w.off, len: w.len, ls: ls, ll: ll, unity: r.unity, fine: r.fine, rate: w.rate, attn: r.attn };
       });
-      var ci = { att: msToS(I.att), rel: msToS(I.rel), vol: I.vol, pan: I.pan, rg: rg };
+      var ci = { att: env ? msToS(I.att) : 0, rel: env ? msToS(I.rel) : 0, vol: env ? I.vol : 127, pan: I.pan, rg: rg };
       if (ci.rel > tail) tail = ci.rel;
       c.pat.push(p);
       c.ins.push(ci);

@@ -21,7 +21,7 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 | Kopfzeile | Play/Stop, Paulstretch an/aus, BPM, LPB (Zeilen pro Beat), ROWS (Pattern-Länge 1–256), OCT, STEP (Edit-Step), CLEAR (alle Noten löschen, Instrumente auf Piano/Standardwerte; Tempo, Länge und Paulstretch bleiben), DEMO, SAVE/LOAD (Song als JSON), WAV (Float-WAV des aktuellen Renders), EXPORT C++ |
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
 | Scope | Oszilloskop (L grün, R amber) und Lissajous (X = L, Y = R), sample-synchron zum laufenden Play/Preview |
-| Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. |
+| Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. Der Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** gilt für den ganzen Song. |
 | Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer; kostet im Export 0 Byte), Stereo (0–10: Stereobreite; 10 = L/R mit unabhängigen Zufallsphasen, maximal breit; 0 = L und R mit gleichen Phasen; bei 10 kostet es 0 Byte, darunter ca. 6 Byte). |
 
 Lautstärke-Wabern: Paulstretch würfelt die Phasen jedes Frequenzbands in jedem Fenster neu. Bänder, die zum selben Ton gehören, überlagern sich dadurch mal verstärkend, mal auslöschend. Das ist im Original-Paulstretch genauso. Gemessen über 50-ms-Blöcke:
@@ -66,6 +66,13 @@ Mixer-Verhalten:
 - Eine neue Note schneidet die alte im selben Kanal ab.
 - Note-Off startet das Release.
 - Am Pattern-Ende bekommen alle Kanäle ein Note-Off, danach folgt der Release-Nachlauf.
+
+Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** abgewählt:
+- Noten setzen sofort mit voller Lautstärke ein, Volume ist immer 100 %. Pan bleibt.
+- Eine Note klingt, bis die nächste Note im Kanal kommt, das Sample endet oder das Pattern zu Ende ist.
+- Vorhandene Note-Offs bleiben im Pattern, werden aber ignoriert und durchgestrichen angezeigt. Neue lassen sich nicht eingeben.
+- Die eingestellten Werte bleiben im Song gespeichert und gelten wieder, sobald der Haken gesetzt ist.
+- Die Exporte enthalten den Code dafür dann gar nicht. Mit gesetztem Haken bleibt der Export unverändert.
 - Samples pro Zeile = `floor(2646000 / (BPM*LPB))`.
 
 ## Demo-Song
@@ -127,8 +134,15 @@ FMA verändert das Ergebnis tatsächlich. Der Test unten liefert mit `-ffp-contr
 
 Hinweis zur Größe: Für Crinkler zählt die komprimierte Größe. Gleichartiger, wiederholter Code kostet dort fast nichts. Code „zusammenzufalten“ (Unterprogramme, Register-Tricks) macht ihn roh kleiner, komprimiert aber oft größer.
 
+Was der Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** spart, gemessen am Demo-Song als fertige Exe mit Crinkler 3.0b (`/COMPMODE:SLOW`), mit Loader, Player und Startcode:
+
+| Variante | Haken gesetzt | Haken abgewählt | Ersparnis |
+|---|---|---|---|
+| ASM | 1767 B | 1629 B | 138 B |
+| C++ (MSVC `/O1`, x86) | 2155 B | 2024 B | 131 B |
+
 ```
-nasm -f win32 dronesynth.asm -o dronesynth.obj     ; mit Crinkler linken: kernel32.lib winmm.lib
+nasm -f win32 dronesynth.asm -o dronesynth.obj     ; mit Crinkler linken: kernel32.lib user32.lib winmm.lib
 ```
 ```cpp
 extern "C" void ds_render();   // Pass 1 + Pass 2 -> ds_out

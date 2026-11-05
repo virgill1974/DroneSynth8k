@@ -14,6 +14,7 @@
     check16(rg);
     var pat = c.pat.map(function (p) { return '{' + p.join(',') + '}'; }).join(',\n');
     var ins = c.ins.map(function (I) { return '{' + [I.att, I.rel, I.vol, I.pan].join(',') + '}'; }).join(',');
+    var pans = c.ins.map(function (I) { return I.pan; }).join(',');
     var L = [];
     L.push(
 '// DroneSynth8k export (generated). Pass 1: gm.dls tracker render, pass 2: stereo Paulstretch.',
@@ -39,7 +40,7 @@
 '#endif',
 'static const unsigned char ds_pat[8][DS_ROWS]={',
 pat + '};',
-'static const int ds_ins[8][4]={' + ins + '};',
+(c.env ? 'static const int ds_ins[8][4]={' + ins + '};' : 'static const unsigned char ds_pan[8]={' + pans + '};'),
 'static const int ds_rs[9]={' + rs.join(',') + '};',
 '// regions: hi,len,loop start,loop len,unity,fine,rate (16 bit) + file offset, attenuation (32 bit)',
 'static const short ds_rg[][7]={' + rg.map(function (r) { return '{' + [r[0], r[2], r[3], r[4], r[5], r[6], r[7]].join(',') + '}'; }).join(',') + '};',
@@ -90,26 +91,22 @@ pat + '};',
 ' ds_load();',
 ' // pass 1: tracker',
 ' for(int c=0;c<8;c++){',
-'  const int*I=ds_ins[c],*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;',
-'  double pos=0,rate=0,env=0,d=0,g=0,pl=(127-I[3])/127.0,pr=I[3]/127.0;',
-'  for(int row=0;row<=DS_ROWS;row++){',
-'   int e=row<DS_ROWS?ds_pat[c][row]:255;',
-'   if(e==255){if(on){if(I[1]>0)d=-env/I[1];else on=0;}}',
-'   else if(e){',
+(c.env ? '  const int*I=ds_ins[c],*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;' : '  const int*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;'),
+(c.env ? '  double pos=0,rate=0,env=0,d=0,g=0,pl=(127-I[3])/127.0,pr=I[3]/127.0;' : '  double pos=0,rate=0,g=0,pl=(127-ds_pan[c])/127.0,pr=ds_pan[c]/127.0;'),
+(c.env ? '  for(int row=0;row<=DS_ROWS;row++){' : '  for(int row=0;row<DS_ROWS;row++){'),
+(c.env ? '   int e=row<DS_ROWS?ds_pat[c][row]:255;\n   if(e==255){if(on){if(I[1]>0)d=-env/I[1];else on=0;}}\n   else if(e){' : '   int e=ds_pat[c][row];\n   if(e){'),
 '    for(int k=ds_rs[c];k<ds_rs[c+1];k++){r=ds_rg[k];ri=ds_rgi[k];if(e<=r[0])break;}',
 '    D=(const short*)(ds_dls+ri[0]);on=1;pos=0;',
 '    rate=ds_exp2((e-r[4])/12.0+r[5]/1200.0)*r[6]/44100.0;',
-'    g=I[2]/127.0*ds_exp2(ri[1]*ds_k[1].d)/32768.0;',
-'    if(I[0]>0){env=0;d=1.0/I[0];}else{env=1;d=0;}',
+(c.env ? '    g=I[2]/127.0*ds_exp2(ri[1]*ds_k[1].d)/32768.0;\n    if(I[0]>0){env=0;d=1.0/I[0];}else{env=1;d=0;}' : '    g=ds_exp2(ri[1]*ds_k[1].d)/32768.0;'),
 '   }',
-'   int end=row<DS_ROWS?t+DS_ROWLEN:DS_DRY;',
+(c.env ? '   int end=row<DS_ROWS?t+DS_ROWLEN:DS_DRY;' : '   int end=t+DS_ROWLEN;'),
 '   for(;t<end;t++)if(on){',
 '    int ip=(int)pos,nx=ip+1,lend=r[2]+r[3],s0=D[ip],s1;double fr=pos-ip;',
 '    if(r[3]){if(nx>=lend)nx-=r[3];s1=D[nx];}else s1=nx<r[1]?D[nx]:0;',
-'    double v=(s0+(s1-s0)*fr)*env*g;',
+(c.env ? '    double v=(s0+(s1-s0)*fr)*env*g;' : '    double v=(s0+(s1-s0)*fr)*g;'),
 '    ds_L[t]+=v*pl;ds_R[t]+=v*pr;',
-'    env+=d;if(env>=1){env=1;d=0;}if(env<=0)on=0;',
-'    pos+=rate;if(r[3]){while(pos>=lend)pos-=r[3];}else if(pos>=r[1])on=0;',
+(c.env ? '    env+=d;if(env>=1){env=1;d=0;}if(env<=0)on=0;\n' : '') + '    pos+=rate;if(r[3]){while(pos>=lend)pos-=r[3];}else if(pos>=r[1])on=0;',
 '   }',
 '  }',
 ' }',
@@ -186,20 +183,126 @@ pat + '};',
     c.ins.forEach(function (I) {
       I.rg.forEach(function (r) { rg.push([r.hi, r.off, r.len, r.ls, r.ll, r.unity, r.fine, r.rate, r.attn]); });
       rs.push(rg.length);
-      ins.push(I.att, I.rel, I.vol, I.pan);
+      ins.push(c.env ? [I.att, I.rel, I.vol, I.pan] : [I.pan]);
     });
     if (!rg.length) rg.push([0, 0, 0, 0, 0, 0, 0, 0, 0]);
     check16(rg);
+    ins = [].concat.apply([], ins);
     c.pat.forEach(function (p) { pat = pat.concat(p); });
     var N = 1 << c.win, sc = Engine().sinCos(N), W = Engine().widthMask(c);
     var rngR = W < 0 ? '' : `    and eax, ${W}
     add eax, ebx
 `;
+    // without envelope, volume and note-off (c.env false) the tracker needs only pan and the plain sample loop
+    var chHead = c.env ? `.ch: mov eax, [V(i_ch)]
+    shl eax, 4
+    add eax, ds_ins
+    mov [V(i_iptr)], eax
+    push 127
+    pop edx
+    sub edx, [eax+12]
+    mov [V(i_tmp)], edx
+    fild dword [V(i_tmp)]
+    fidiv dword [V(c127)]
+    fstp qword [V(v_pl)]
+    fild dword [eax+12]
+    fidiv dword [V(c127)]
+    fstp qword [V(v_pr)]
+` : `.ch: mov eax, [V(i_ch)]
+    movzx eax, byte [ds_pan+eax]
+    push 127
+    pop edx
+    sub edx, eax
+    mov [V(i_tmp)], edx
+    fild dword [V(i_tmp)]
+    fidiv dword [V(c127)]
+    fstp qword [V(v_pl)]
+    mov [V(i_tmp)], eax
+    fild dword [V(i_tmp)]
+    fidiv dword [V(c127)]
+    fstp qword [V(v_pr)]
+`;
+    var rowHead = c.env ? `.row: mov eax, [V(i_row)]
+    mov edx, 255
+    cmp eax, DS_ROWS
+    jae .ev
+    imul edx, [V(i_ch)], DS_ROWS
+    movzx edx, byte [ds_pat+edx+eax]
+.ev: mov eax, [V(i_iptr)]
+    cmp edx, 255
+    jne .on
+    cmp dword [V(i_on)], 0
+    je .evd
+    cmp dword [eax+4], 0
+    jle .kill
+    fld qword [V(v_env)]
+    fchs
+    fidiv dword [eax+4]
+    fstp qword [V(v_d)]
+    jmp .evd
+.kill: and dword [V(i_on)], 0
+    jmp .evd
+.on: test edx, edx
+` : `.row: imul edx, [V(i_ch)], DS_ROWS
+    add edx, [V(i_row)]
+    movzx edx, byte [ds_pat+edx]
+    test edx, edx
+`;
+    var noteGain = c.env ? `    mov eax, [V(i_iptr)]
+    fild dword [eax+8]
+    fidiv dword [V(c127)]
+    fild dword [esi+18]
+    fmul qword [V(v_att)]
+    call ds_exp2
+    fmulp st1, st0
+    fidiv dword [V(c32768)]
+    fstp qword [V(v_g)]
+    mov eax, [V(i_iptr)]
+    fld1
+    fldz
+    cmp dword [eax], 0
+    jle .noat
+    fstp qword [V(v_env)]      ; env = 0
+    fidiv dword [eax]          ; d = 1/att
+    fstp qword [V(v_d)]
+    jmp .evd
+.noat: fstp qword [V(v_d)]     ; d = 0
+    fstp qword [V(v_env)]      ; env = 1
+.evd: mov eax, [V(i_row)]
+    mov ecx, DS_DRY
+    cmp eax, DS_ROWS
+    jae .se
+    lea ecx, [edi+DS_ROWLEN]
+.se: mov [V(i_end)], ecx
+` : `    fild dword [esi+18]
+    fmul qword [V(v_att)]
+    call ds_exp2
+    fidiv dword [V(c32768)]
+    fstp qword [V(v_g)]
+.evd: lea ecx, [edi+DS_ROWLEN]
+    mov [V(i_end)], ecx
+`;
+    var envStep = c.env ? `    fld qword [V(v_env)]
+    fadd qword [V(v_d)]
+    fld1
+    fcomip st0, st1
+    ja .e1
+    fstp st0
+    fld1
+    fldz
+    fstp qword [V(v_d)]
+.e1: fst qword [V(v_env)]
+    fldz
+    fcomip st0, st1
+    fstp st0
+    jb .e2
+    and dword [V(i_on)], 0
+.e2: ` : '    ';
     return `; DroneSynth8k ASM export (generated). NASM, 32-bit x86, x87 FPU. Pass 1: gm.dls tracker, pass 2: stereo Paulstretch.
 ; Bit-exact with the web tool and the C++ export. Expected FNV-1a hash of ds_out: ${hash || '?'}
 ; gm.dls size when exported: ${c.dlsSize} bytes (sample offsets below are absolute file offsets).
 ; Requires SSE3 (fisttp). Sets the FPU to 53-bit precision; do not change the FPU control word while ds_render runs.
-; Build:  nasm -f win32 dronesynth.asm   (link with crinkler: kernel32.lib winmm.lib)
+; Build:  nasm -f win32 dronesynth.asm   (link with crinkler: kernel32.lib user32.lib winmm.lib)
 ; Use from C:  extern "C" void ds_render(); extern "C" void ds_play(); extern "C" int ds_pos(); extern "C" float ds_out[];
 ; Options: %define DS_NO_PLAYER (no waveOut), DS_NOLOAD (fill ds_dls yourself), DS_GMDLS "path",
 ;          DS_VERIFY (adds ds_hash(): FNV-1a of ds_out, must equal the hash above)
@@ -248,9 +351,7 @@ v_half:  dq ${dq(0.5)}
 v_m1:    dq ${dq(-1)}
 v_pos:   dq 0
 v_rate:  dq 0
-v_env:   dq 0
-v_d:     dq 0
-v_g:     dq 0
+${c.env ? 'v_env:   dq 0\nv_d:     dq 0\n' : ''}v_g:     dq 0
 v_pl:    dq 0
 v_pr:    dq 0
 v_sp:    dq 0
@@ -274,8 +375,7 @@ i_s0:    dd 0
 i_on:    dd 0
 i_row:   dd 0
 i_end:   dd 0
-i_iptr:  dd 0
-i_seed:  dd DS_SEED
+${c.env ? 'i_iptr:  dd 0\n' : ''}i_seed:  dd DS_SEED
 i_p:     dd 0
 i_st:    dd 0
 i_ch:    dd 0
@@ -283,8 +383,7 @@ cw:      dw 0x027F
 ds_vb equ ds_v+128
 ds_pat:
 ${lines(pat, 32, 'db')}
-ds_ins:
-${lines(ins, 16, 'dd')}
+${c.env ? 'ds_ins:\n' + lines(ins, 16, 'dd') : 'ds_pan:\n' + lines(ins, 8, 'db')}
 ds_rs:
 ${lines(rs, 9, 'dd')}
 ds_rg:     ; 22 bytes each: hi(w), file offset(d), len, loop start, loop len, unity, fine, rate (w), attenuation(d)
@@ -441,45 +540,10 @@ ds_render:
     call [__imp__ReadFile@20]
 %endif
 ; ---- pass 1: tracker -> ds_L/ds_R (double) ----
-.ch: mov eax, [V(i_ch)]
-    shl eax, 4
-    add eax, ds_ins
-    mov [V(i_iptr)], eax
-    push 127
-    pop edx
-    sub edx, [eax+12]
-    mov [V(i_tmp)], edx
-    fild dword [V(i_tmp)]
-    fidiv dword [V(c127)]
-    fstp qword [V(v_pl)]
-    fild dword [eax+12]
-    fidiv dword [V(c127)]
-    fstp qword [V(v_pr)]
-    xor edi, edi
+${chHead}    xor edi, edi
     mov [V(i_on)], edi
     mov [V(i_row)], edi
-.row: mov eax, [V(i_row)]
-    mov edx, 255
-    cmp eax, DS_ROWS
-    jae .ev
-    imul edx, [V(i_ch)], DS_ROWS
-    movzx edx, byte [ds_pat+edx+eax]
-.ev: mov eax, [V(i_iptr)]
-    cmp edx, 255
-    jne .on
-    cmp dword [V(i_on)], 0
-    je .evd
-    cmp dword [eax+4], 0
-    jle .kill
-    fld qword [V(v_env)]
-    fchs
-    fidiv dword [eax+4]
-    fstp qword [V(v_d)]
-    jmp .evd
-.kill: and dword [V(i_on)], 0
-    jmp .evd
-.on: test edx, edx
-    jz .evd
+${rowHead}    jz .evd
     mov ecx, [V(i_ch)]
     lea ebx, [ds_rs+ecx*4]
     mov ecx, [ebx]
@@ -506,33 +570,7 @@ ds_render:
     fimul word [esi+16]
     fidiv dword [V(c44100)]
     fstp qword [V(v_rate)]
-    mov eax, [V(i_iptr)]
-    fild dword [eax+8]
-    fidiv dword [V(c127)]
-    fild dword [esi+18]
-    fmul qword [V(v_att)]
-    call ds_exp2
-    fmulp st1, st0
-    fidiv dword [V(c32768)]
-    fstp qword [V(v_g)]
-    mov eax, [V(i_iptr)]
-    fld1
-    fldz
-    cmp dword [eax], 0
-    jle .noat
-    fstp qword [V(v_env)]      ; env = 0
-    fidiv dword [eax]          ; d = 1/att
-    fstp qword [V(v_d)]
-    jmp .evd
-.noat: fstp qword [V(v_d)]     ; d = 0
-    fstp qword [V(v_env)]      ; env = 1
-.evd: mov eax, [V(i_row)]
-    mov ecx, DS_DRY
-    cmp eax, DS_ROWS
-    jae .se
-    lea ecx, [edi+DS_ROWLEN]
-.se: mov [V(i_end)], ecx
-.s: cmp edi, [V(i_end)]
+${noteGain}.s: cmp edi, [V(i_end)]
     jge .rn
     cmp dword [V(i_on)], 0
     je .sn
@@ -561,8 +599,7 @@ ds_render:
     fisub dword [V(i_ip)]
     fimul dword [V(i_tmp)]
     fiadd dword [V(i_s0)]
-    fmul qword [V(v_env)]
-    fmul qword [V(v_g)]
+${c.env ? '    fmul qword [V(v_env)]\n' : ''}    fmul qword [V(v_g)]
     fld st0
     fmul qword [V(v_pl)]
     fadd qword [ds_L+edi*8]
@@ -570,22 +607,7 @@ ds_render:
     fmul qword [V(v_pr)]
     fadd qword [ds_R+edi*8]
     fstp qword [ds_R+edi*8]
-    fld qword [V(v_env)]
-    fadd qword [V(v_d)]
-    fld1
-    fcomip st0, st1
-    ja .e1
-    fstp st0
-    fld1
-    fldz
-    fstp qword [V(v_d)]
-.e1: fst qword [V(v_env)]
-    fldz
-    fcomip st0, st1
-    fstp st0
-    jb .e2
-    and dword [V(i_on)], 0
-.e2: fld qword [V(v_pos)]
+${envStep}fld qword [V(v_pos)]
     fadd qword [V(v_rate)]
     movzx ecx, word [esi+10]
     jecxz .p2
@@ -606,7 +628,7 @@ ds_render:
     jmp .s
 .rn: inc dword [V(i_row)]
     cmp dword [V(i_row)], DS_ROWS
-    jbe .row
+    ${c.env ? 'jbe' : 'jb'} .row
     inc dword [V(i_ch)]
     cmp dword [V(i_ch)], 8
     jl .ch

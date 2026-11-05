@@ -106,6 +106,7 @@
     if (nc !== insSel) selectIns(nc);
   }
   function setNote(e) {
+    if (e === 255 && song.env === false) { status('Note-Off ist abgewaehlt (Instrument: ATTACK / RELEASE / VOLUME / NOTE-OFF)', true); return; }
     song.pat[cur.ch][cur.row] = e;
     drawCell(cur.row, cur.ch);
     changed();
@@ -196,9 +197,15 @@
     insShows.push(param(P, 'ATTACK ms', 0, 10000, function () { return I().att; }, function (v) { I().att = v; }));
     insShows.push(param(P, 'RELEASE ms', 0, 10000, function () { return I().rel; }, function (v) { I().rel = v; }));
     insShows.push(param(P, 'VOLUME', 0, 127, function () { return I().vol; }, function (v) { I().vol = v; }));
+    Array.prototype.forEach.call(P.children, function (d) { d.classList.add('envp'); }); // hidden while the option is off
     insShows.push(param(P, 'PAN', 0, 127, function () { return I().pan; }, function (v) { I().pan = v; }));
+    $('cEnv').addEventListener('change', function () { song.env = this.checked; refreshEnv(); changed(); this.blur(); });
     $('bPrev').addEventListener('click', function () { preview(insSel, isKit(song.ins[insSel].prog) ? 36 : 60, 1.5); });
   })();
+  function refreshEnv() {
+    $('cEnv').checked = song.env !== false;
+    document.body.classList.toggle('noenv', song.env === false);
+  }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function buildProgSelect() {
     var h = '', have = {};
@@ -254,7 +261,7 @@
   function updateInfo() {
     var rowLen = Math.floor(2646000 / (song.bpm * song.lpb)), dry = song.rows * rowLen / 44100;
     $('psInfo').textContent = 'Zeile ' + rowLen + ' smp | Pattern ' + dry.toFixed(2) + ' s\nOutput ca. ' +
-      (dry * song.ps.st / 10).toFixed(1) + ' s (+ Release-Nachlauf)';
+      (dry * song.ps.st / 10).toFixed(1) + ' s' + (song.env === false ? '' : ' (+ Release-Nachlauf)');
     var p = song.ins[insSel].prog, rl = dls && dls.ins[p];
     $('insInfo').textContent = !dls ? 'gm.dls nicht geladen' : !rl ? 'Sound fehlt in dieser DLS' :
       isKit(p) ? 'Drum Kit: ' + rl.length + ' Samples, Tasten ' + noteName(rl[0].lo) + ' .. ' + noteName(rl[rl.length - 1].hi) +
@@ -263,7 +270,7 @@
   }
 
   // ---------- rendering ----------
-  function dryKey() { return JSON.stringify([song.bpm, song.lpb, song.rows, song.pat, song.ins]); }
+  function dryKey() { return JSON.stringify([song.bpm, song.lpb, song.rows, song.pat, song.ins, song.env]); }
   function render(wet) {
     if (!dls) throw new Error('gm.dls nicht geladen');
     var t0 = performance.now(), dk = dryKey();
@@ -498,7 +505,7 @@
   $('bExport').addEventListener('click', function () { exportCode('dronesynth.h', Export.cpp); this.blur(); });
   $('bExportAsm').addEventListener('click', function () { exportCode('dronesynth.asm', Export.asm); this.blur(); });
 
-  function refreshAll() { refreshHeader(); refreshPs(); buildTracker(); selectIns(cur.ch); }
+  function refreshAll() { refreshHeader(); refreshPs(); refreshEnv(); buildTracker(); selectIns(cur.ch); }
 
   refreshAll();
   idb('readonly', function (s) { return s.get('gm'); }).then(function (b) {

@@ -45,6 +45,10 @@ input[type=range] { padding: 0; accent-color: var(--hot); }
 label { color: var(--dim); white-space: nowrap; }
 label input, label select { margin-left: 3px; }
 .tog input { vertical-align: middle; accent-color: var(--hot); }
+.row-left { display: block; margin: 6px 0 4px; font-size: 11px; }
+.row-left input { margin-left: 0; }
+body.noenv .envp { display: none; }
+body.noenv #tracker td.off { color: var(--dim); text-decoration: line-through; }
 main { flex: 1; display: flex; min-height: 0; flex-wrap: wrap; }
 #trackerWrap { flex: 1 1 520px; overflow: auto; min-height: 200px; max-height: 100%; }
 aside { flex: 0 0 320px; max-width: 100%; border-left: 1px solid var(--line); overflow: auto; background: var(--panel); }
