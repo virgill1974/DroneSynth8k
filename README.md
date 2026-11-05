@@ -72,14 +72,6 @@ Mixer-Verhalten:
 
 Beim ersten Öffnen des Tools, solange noch kein Song im Browser gespeichert ist, wird `demos/demosong.ds8k.json` geladen. Eingebunden ist er über `demo-song.js`. Hat der Browser schon einen Song gespeichert, bleibt dieser erhalten; der Button **DEMO** lädt den Demo-Song jederzeit nach Rückfrage.
 
-`demos/sfx-piano.ds8k.json` lässt sich über **LOAD** laden:
-- Klavier extrem tief (A-0 … D-1) und extrem hoch (C-7 … E-8)
-- Seashore, Bird Tweet, SFX-Kit und Crystal
-- Paulstretch 4,7× mit 32k-Fenster, volle Diffusion und weit gestreutes Panorama, dadurch sehr breites Stereo
-- ca. 8 s lang
-
-`demos/sfx-piano.h` und `demos/sfx-piano.asm` sind die fertigen Exporte dazu, mit Hash `8f23eb81`.
-
 ## Online stellen (Cloudflare Pages)
 
 Die Seite ist rein statisch, ein Build ist nicht nötig.
@@ -175,6 +167,21 @@ Bitgenauigkeit mit x87:
 
 ## Tests
 
+### Windows
+
+```sh
+node test/run-windows.js
+```
+
+Das Skript braucht Node, Visual Studio mit den C++-Tools und NASM (`winget install --id NASM.NASM -e`). Beide Compiler findet es selbst, eine Developer-Konsole ist nicht nötig.
+
+1. **Synthetische DLS:** Die Test-Songs aus `verify.js` werden mit MSVC gebaut (x64 `/O2` und `/Od`, x86 `/O2` und `/O1`) und als ASM mit NASM. Die Hashes müssen zum JS-Render passen.
+2. **Echte gm.dls:** `verify-demos.js` rendert alle Songs aus `demos/`. Die Exporte laufen dabei über ihren eigenen Loader, und der waveOut-Code wird mitgelinkt, aber nicht abgespielt. Das Skript schlägt auch fehl, wenn `demo-song.js` nicht mehr zu `demos/demosong.ds8k.json` passt oder ein in `demos/` eingecheckter Export nicht mehr zum aktuellen Stand passt.
+
+Fehlt die gm.dls, wird Teil 2 übersprungen. Der Exit-Code ist 0, wenn alles passt.
+
+### Linux
+
 ```sh
 sh test/run.sh
 ```
@@ -185,9 +192,9 @@ Das Skript prüft die Bitgenauigkeit ohne Windows:
 3. Jeder C++-Export wird mit g++ in mehreren Optimierungsstufen kompiliert. Jeder ASM-Export wird mit nasm als 32-Bit-Linux-Programm gebaut (`test/asm_test.asm`, ohne libc) und ausgeführt.
 4. Die FNV-1a-Hashes von JS, C++ und ASM müssen übereinstimmen.
 
-Den echten Hörtest mit der originalen gm.dls und Crinkler macht man unter Windows:
-- Export mit `#define DS_VERIFY` bauen.
-- `ds_hash()` mit dem Hash im Header vergleichen.
+### Nicht automatisch geprüft
+
+Hörtest und Crinkler-Build bleiben Handarbeit. `ds_hash()` (`DS_VERIFY`) zeigt auch dort, ob der Build noch bitgenau ist.
 
 ## Dateien
 
@@ -199,6 +206,6 @@ Den echten Hörtest mit der originalen gm.dls und Crinkler macht man unter Windo
 | `dls.js` | DLS-Parser |
 | `gm.js` | GM-Namen und Kategorien |
 | `export.js` | C++- und ASM-Generator (Spiegel von `engine.js`) |
-| `test/` | Bitgenauigkeits-Tests |
+| `test/` | Bitgenauigkeits-Tests (`run-windows.js`, `run.sh`) |
 
-**Wichtig:** Wer `engine.js` ändert, muss beide Generatoren in `export.js` (C++ und ASM) identisch mitändern und anschließend `test/run.sh` ausführen.
+**Wichtig:** Wer `engine.js` ändert, muss beide Generatoren in `export.js` (C++ und ASM) identisch mitändern und anschließend die Tests ausführen (`node test/run-windows.js` unter Windows, `sh test/run.sh` unter Linux).
