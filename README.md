@@ -22,7 +22,7 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
 | Scope | Oszilloskop (L grün, R amber) und Lissajous (X = L, Y = R), sample-synchron zum laufenden Play/Preview |
 | Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. Der Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** gilt für den ganzen Song. |
-| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer; kostet im Export 0 Byte), Stereo (0–10: Stereobreite; 10 = L/R mit unabhängigen Zufallsphasen, maximal breit; 0 = L und R mit gleichen Phasen; bei 10 kostet es 0 Byte, darunter ca. 6 Byte). |
+| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer; kostet im Export 0 Byte), Stereo (0–10: Stereobreite; 10 = L/R mit unabhängigen Zufallsphasen, maximal breit; 0 = L und R mit gleichen Phasen; bei 10 kostet es 0 Byte, darunter ca. 6 Byte), Smooth (0–4: gegen Lautstärke-Pulsieren, siehe unten; 0 = klassisches Paulstretch, kostet dann 0 Byte). |
 
 Lautstärke-Wabern: Paulstretch würfelt die Phasen jedes Frequenzbands in jedem Fenster neu. Bänder, die zum selben Ton gehören, überlagern sich dadurch mal verstärkend, mal auslöschend. Das ist im Original-Paulstretch genauso. Gemessen über 50-ms-Blöcke:
 
@@ -35,6 +35,11 @@ Lautstärke-Wabern: Paulstretch würfelt die Phasen jedes Frequenzbands in jedem
 Jeder einzelne Kanal wabert so stark wie die Mono-Summe. In Stereo klingt es nur ruhiger, weil L und R unabhängig wabern und sich beim Hören ausgleichen. Der STEREO-Regler ändert daran nichts, er regelt nur die Breite.
 
 Was hilft:
+- **SMOOTH 2** (empfohlen): Jedes Fenster übernimmt seine Phasen aus dem, was im Ausgang an dieser Stelle schon steht, und gleicht sie dann zweimal mit dem eigenen Fenster ab (RTISI-Verfahren). Die Betragsspektren bleiben gleich, nur die Phasen passen danach zusammen, sodass sich die Überlappungen nicht mehr auslöschen.
+  - Gemessen an 12 gehaltenen GM-Tönen (Spanne p95–p5 über 50-ms-Blöcke, ein Kanal): im Mittel 8,7 → 4,3 dB, Flöte 13 → 1 dB, Klavier 10 → 2 dB.
+  - Im Demo-Song (Kanäle einzeln, langsame Verläufe herausgerechnet): Pad 2 11,7 → 3,5 dB, Strings 8,3 → 3,7 dB. Das Drum Kit wird etwas unruhiger (3,3 → 4,9 dB).
+  - Kosten: etwa dreifache Renderzeit, rund 2 dB mehr Pegel (GAIN anpassen) und im Export ca. 100–150 Byte. SMOOTH 3 und 4 waren gemessen nicht besser als 2.
+- Größere Fenster machen das Pulsieren nur langsamer (2^14: ~3,5 Hz, 2^17: ~1,9 Hz), nicht flacher.
 - dichteres Material: Akkorde, mehrere Stimmen, Rauschanteile
 - DIFFUSION 8: Bei Einzeltönen geht Mono-Wabern von ~12 auf ~8 dB zurück, der Klang wird aber etwas pulsierender
 
@@ -121,6 +126,8 @@ Weitere Eigenschaften:
   - **Nicht** verwenden: `/fp:fast`, `/fp:contract`, `/arch:IA32` (x87), und kein `/arch:AVX2` mit älteren MSVC-Versionen, weil das FMA-Kontraktion erlaubt.
 - **gcc/clang:** `-ffp-contract=off -msse2 -mfpmath=sse`
 
+Der C++-Export rechnet auch unter MSVC x86 nur mit SSE2. Die x87-FPU lädt höchstens den Rückgabewert von `ds_sqrt`, und das hängt nicht von ihrer Präzision ab. Deshalb bleibt der Export bitgenau, wenn ein Intro vorher die FPU-Präzision ändert, zum Beispiel Direct3D 9 ohne `D3DCREATE_FPU_PRESERVE`. Ältere Exporte lieferten in diesem Fall einen anderen Hash. Der ASM-Export setzt die Präzision ohnehin selbst.
+
 FMA verändert das Ergebnis tatsächlich. Der Test unten liefert mit `-ffp-contract=fast -march=haswell` einen anderen Hash.
 
 ## Export ASM (`dronesynth.asm`)
@@ -134,12 +141,14 @@ FMA verändert das Ergebnis tatsächlich. Der Test unten liefert mit `-ffp-contr
 
 Hinweis zur Größe: Für Crinkler zählt die komprimierte Größe. Gleichartiger, wiederholter Code kostet dort fast nichts. Code „zusammenzufalten“ (Unterprogramme, Register-Tricks) macht ihn roh kleiner, komprimiert aber oft größer.
 
-Was der Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** spart, gemessen am Demo-Song als fertige Exe mit Crinkler 3.0b (`/COMPMODE:SLOW`), mit Loader, Player und Startcode:
+Gemessen am Demo-Song als fertige Exe mit Crinkler 3.0b (`/COMPMODE:SLOW`), mit Loader, Player und Startcode:
 
-| Variante | Haken gesetzt | Haken abgewählt | Ersparnis |
+| Variante | Standard | Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** abgewählt | SMOOTH 2 |
 |---|---|---|---|
-| ASM | 1767 B | 1629 B | 138 B |
-| C++ (MSVC `/O1`, x86) | 2155 B | 2024 B | 131 B |
+| ASM | 1751 B | 1608 B | 1849 B |
+| C++ (MSVC `/O1`, x86) | 2080 B | 1959 B | 2232 B |
+
+Mit der Crinkler-Option `/TINYIMPORT` werden es jeweils rund 66 Byte weniger, die Hashes stimmen dabei. `/TINYHEADER` ist für 1k-Intros gedacht und lieferte hier Exes, die Windows nicht startet. Bei MSVC war `/O1` kleiner als `/O2` und `/Os`.
 
 ```
 nasm -f win32 dronesynth.asm -o dronesynth.obj     ; mit Crinkler linken: kernel32.lib user32.lib winmm.lib
@@ -177,6 +186,7 @@ Bitgenauigkeit mit x87:
 - Pass 1 ist ein Sample-Player mit linearer Interpolation, DLS-Loops, Fine-Tune, Attenuation und 44100 Hz.
 - Pass 2 ist Paulstretch mit radix-2-FFT und Sinus-Fenster bei Hop N/2. Eine einzige komplexe FFT verarbeitet beide Kanäle zugleich (L im Real-, R im Imaginärteil). Die Spektren werden getrennt, und **jeder Kanal bekommt eigene Zufallsphasen**. Daraus entsteht die Stereo-Breite.
 - Der Zufall kommt aus einem 32-Bit-LCG mit Seed (intern fest auf 1; jeder Seed klingt statistisch gleich). Die Phasen sind Indizes in die Sinustabelle.
+- SMOOTH > 0: Die Phasen kommen aus der FFT des bisherigen Ausgangs (float32) plus des eigenen Fensters, normiert über `a / sqrt(a*a + b*b)`. Dafür reichen dieselben Grundrechenarten. Ist der Ausgang an einer Stelle still, gibt es Zufallsphasen wie ohne SMOOTH.
 - Die Ausgabe wird als float32 overlap-add direkt in den Ausgabepuffer geschrieben (`Float32Array` bzw. `float[]`, beide mit Round-to-nearest-even).
 
 ## Tests

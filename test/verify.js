@@ -56,6 +56,17 @@ var songs = {
     s.ps = { win: 11, st: 25, seed: 99, gain: 120, df: 4 };
   }),
   noenvempty: song(function (s) { s.env = false; s.pat[0][3] = 255; }),
+  smooth: song(function (s) {
+    s.rows = 32; s.pat = s.pat.map(function () { return new Array(32).fill(0); });
+    [36, 55, 59, 60, 61, 72, 84, 100].forEach(function (n, i) { s.pat[i][i * 3] = n; s.pat[i][i * 3 + 12] = 255; s.ins[i].pan = i * 18; s.ins[i].att = i * 40; });
+    s.ins[3].prog = 48; s.ins[5].prog = 89; s.ins[0].pan = 0; s.ins[7].pan = 127;
+    s.ps = { win: 11, st: 40, seed: 3, gain: 130, df: 7, sw: 4, sm: 2 };
+  }),
+  smoothmono: song(function (s) { s.pat[0][0] = 48; s.pat[1][6] = 60; s.ps = { win: 10, st: 60, seed: 9, gain: 100, df: 10, sw: 0, sm: 1 }; }),
+  smoothnoenv: song(function (s) {
+    s.env = false; s.pat[0][0] = 40; s.pat[0][9] = 52; s.pat[1][4] = 64; s.ins[1].prog = 89; s.ins[1].pan = 127;
+    s.ps = { win: 12, st: 25, seed: 1, gain: 90, df: 10, sm: 4 };
+  }),
   empty: song(function () {})
 };
 

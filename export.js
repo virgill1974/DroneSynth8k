@@ -15,8 +15,7 @@
     var pat = c.pat.map(function (p) { return '{' + p.join(',') + '}'; }).join(',\n');
     var ins = c.ins.map(function (I) { return '{' + [I.att, I.rel, I.vol, I.pan].join(',') + '}'; }).join(',');
     var pans = c.ins.map(function (I) { return I.pan; }).join(',');
-    var L = [];
-    L.push(
+    var L = [
 '// DroneSynth8k export (generated). Pass 1: gm.dls tracker render, pass 2: stereo Paulstretch.',
 '// Output: ds_out = DS_OUT_LEN stereo frames, float32 interleaved, 44100 Hz. Bit-exact with the web tool.',
 '// gm.dls size when exported: ' + c.dlsSize + ' bytes (sample offsets below are absolute file offsets).',
@@ -33,6 +32,7 @@
 '#define DS_SEED ' + c.seed + 'u',
 '#define DS_GAIN ' + c.gain,
 '#define DS_DF ' + c.df,
+(c.sm ? '#define DS_SM ' + c.sm + '\n' : '') +
 '#define DS_OUT_LEN ' + c.outLen,
 '#define DS_DLS_SIZE ' + c.dlsSize,
 '#ifndef DS_GMDLS',
@@ -43,23 +43,24 @@ pat + '};',
 (c.env ? 'static const int ds_ins[8][4]={' + ins + '};' : 'static const unsigned char ds_pan[8]={' + pans + '};'),
 'static const int ds_rs[9]={' + rs.join(',') + '};',
 '// regions: hi,len,loop start,loop len,unity,fine,rate (16 bit) + file offset, attenuation (32 bit)',
-'static const short ds_rg[][7]={' + rg.map(function (r) { return '{' + [r[0], r[2], r[3], r[4], r[5], r[6], r[7]].join(',') + '}'; }).join(',') + '};',
-'static const int ds_rgi[][2]={' + rg.map(function (r) { return '{' + r[1] + ',' + r[8] + '}'; }).join(',') + '};',
+'static const short ds_rg[7][' + rg.length + ']={' + [0, 2, 3, 4, 5, 6, 7].map(function (f) { return '{' + rg.map(function (r) { return r[f]; }).join(',') + '}'; }).join(',') + '};',
+'static const int ds_rgi[2][' + rg.length + ']={' + [1, 8].map(function (f) { return '{' + rg.map(function (r) { return r[f]; }).join(',') + '}'; }).join(',') + '};',
 'static unsigned char ds_dls[DS_DLS_SIZE];',
 'static double ds_L[DS_DRY+DS_N],ds_R[DS_DRY+DS_N],ds_re[DS_N],ds_im[DS_N],ds_tab[DS_N*5/2]; // dry buffers zero padded',
-'static float ds_out[DS_OUT_LEN*2];',
+'static float ds_out[DS_OUT_LEN*2];' + (c.sm ? '\nstatic double ds_mag[DS_N]; // SMOOTH: magnitudes L (1..H-1), R (H+1..N-1)' : ''),
 '',
 '#include <emmintrin.h>',
 'static double ds_sqrt(double x){return _mm_cvtsd_f64(_mm_sqrt_sd(_mm_set_sd(x),_mm_set_sd(x)));}',
 '// exact double constants (bit patterns): ln2, dls attenuation scale, sin(pi/N), cos(pi/N)',
 'static const union{unsigned long long u;double d;}ds_k[4]={' + K + '};',
-'static double ds_exp2(double x){',
+'static double ds_x; // ds_exp2 result: a global instead of a return value keeps MSVC x86 off the x87 FPU',
+'static void ds_exp2(double x){',
 ' double s=1;',
 ' while(x<0){x+=1;s*=0.5;}',
 ' while(x>=1){x-=1;s*=2;}',
 ' double t=x*ds_k[0].d,r=1;',
 ' for(int k=14;k>0;k--)r=1+t/k*r;',
-' return s*r;',
+' ds_x=s*r;',
 '}',
 'static void ds_fft(int sg){',
 ' const int N=DS_N;double*re=ds_re,*im=ds_im;',
@@ -91,22 +92,22 @@ pat + '};',
 ' ds_load();',
 ' // pass 1: tracker',
 ' for(int c=0;c<8;c++){',
-(c.env ? '  const int*I=ds_ins[c],*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;' : '  const int*ri=ds_rgi[0];const short*r=ds_rg[0],*D=0;int on=0,t=0;'),
+(c.env ? '  const int*I=ds_ins[c];const short*D=0;int on=0,t=0,R=0;' : '  const short*D=0;int on=0,t=0,R=0;'),
 (c.env ? '  double pos=0,rate=0,env=0,d=0,g=0,pl=(127-I[3])/127.0,pr=I[3]/127.0;' : '  double pos=0,rate=0,g=0,pl=(127-ds_pan[c])/127.0,pr=ds_pan[c]/127.0;'),
 (c.env ? '  for(int row=0;row<=DS_ROWS;row++){' : '  for(int row=0;row<DS_ROWS;row++){'),
 (c.env ? '   int e=row<DS_ROWS?ds_pat[c][row]:255;\n   if(e==255){if(on){if(I[1]>0)d=-env/I[1];else on=0;}}\n   else if(e){' : '   int e=ds_pat[c][row];\n   if(e){'),
-'    for(int k=ds_rs[c];k<ds_rs[c+1];k++){r=ds_rg[k];ri=ds_rgi[k];if(e<=r[0])break;}',
-'    D=(const short*)(ds_dls+ri[0]);on=1;pos=0;',
-'    rate=ds_exp2((e-r[4])/12.0+r[5]/1200.0)*r[6]/44100.0;',
-(c.env ? '    g=I[2]/127.0*ds_exp2(ri[1]*ds_k[1].d)/32768.0;\n    if(I[0]>0){env=0;d=1.0/I[0];}else{env=1;d=0;}' : '    g=ds_exp2(ri[1]*ds_k[1].d)/32768.0;'),
+'    for(int k=ds_rs[c];k<ds_rs[c+1];k++){R=k;if(e<=ds_rg[0][k])break;}',
+'    D=(const short*)(ds_dls+ds_rgi[0][R]);on=1;pos=0;',
+'    ds_exp2((e-ds_rg[4][R])/12.0+ds_rg[5][R]/1200.0);rate=ds_x*ds_rg[6][R]/44100.0;',
+(c.env ? '    ds_exp2(ds_rgi[1][R]*ds_k[1].d);g=I[2]/127.0*ds_x/32768.0;\n    if(I[0]>0){env=0;d=1.0/I[0];}else{env=1;d=0;}' : '    ds_exp2(ds_rgi[1][R]*ds_k[1].d);g=ds_x/32768.0;'),
 '   }',
 (c.env ? '   int end=row<DS_ROWS?t+DS_ROWLEN:DS_DRY;' : '   int end=t+DS_ROWLEN;'),
 '   for(;t<end;t++)if(on){',
-'    int ip=(int)pos,nx=ip+1,lend=r[2]+r[3],s0=D[ip],s1;double fr=pos-ip;',
-'    if(r[3]){if(nx>=lend)nx-=r[3];s1=D[nx];}else s1=nx<r[1]?D[nx]:0;',
+'    int ip=(int)pos,nx=ip+1,lend=ds_rg[2][R]+ds_rg[3][R],s0=D[ip],s1;double fr=pos-ip;',
+'    if(ds_rg[3][R]){if(nx>=lend)nx-=ds_rg[3][R];s1=D[nx];}else s1=nx<ds_rg[1][R]?D[nx]:0;',
 (c.env ? '    double v=(s0+(s1-s0)*fr)*env*g;' : '    double v=(s0+(s1-s0)*fr)*g;'),
 '    ds_L[t]+=v*pl;ds_R[t]+=v*pr;',
-(c.env ? '    env+=d;if(env>=1){env=1;d=0;}if(env<=0)on=0;\n' : '') + '    pos+=rate;if(r[3]){while(pos>=lend)pos-=r[3];}else if(pos>=r[1])on=0;',
+(c.env ? '    env+=d;if(env>=1){env=1;d=0;}if(env<=0)on=0;\n' : '') + '    pos+=rate;if(ds_rg[3][R]){while(pos>=lend)pos-=ds_rg[3][R];}else if(pos>=ds_rg[1][R])on=0;',
 '   }',
 '  }',
 ' }',
@@ -114,12 +115,30 @@ pat + '};',
 ' const int N=DS_N,H=N/2,M=(2*N>>(10-DS_DF))-1;',
 ' double ts=0,tc=1;',
 ' for(int k=0;k<N*5/2;k++){ds_tab[k]=ts;double tt=tc*ds_k[3].d-ts*ds_k[2].d;ts=ts*ds_k[3].d+tc*ds_k[2].d;tc=tt;}',
-' unsigned s=DS_SEED;double g=DS_GAIN/(200.0*N),disp=H*10/(double)DS_ST;int o=0;',
+' unsigned s=DS_SEED;double g=DS_GAIN/(200.0*N),disp=H*10/(double)DS_ST;int o=0' + (c.sm ? ',q=0;' : ';'),
 ' for(double sp=0;sp<DS_DRY;sp+=disp,o+=H){',
 '  int p=(int)sp;',
 '  for(int i=0;i<N;i++){double w=ds_tab[i];ds_re[i]=ds_L[p+i]*w;ds_im[i]=ds_R[p+i]*w;}',
 '  ds_fft(-1);',
 '  ds_re[0]=0;ds_im[0]=0;ds_re[H]=0;ds_im[H]=0;',
+].concat(c.sm ? [
+'  for(int k=1;k<H;k++){int k2=N-k;double ar=ds_re[k],ai=ds_im[k],br=ds_re[k2],bi=ds_im[k2],a=ar+br,b=ai-bi;ds_mag[k]=ds_sqrt(a*a+b*b);a=ai+bi;b=ar-br;ds_mag[H+k]=ds_sqrt(a*a+b*b);}',
+'  for(int it=0;it<=DS_SM;it++){ // SMOOTH: phases from the output already written here, refined DS_SM times',
+'   if(it)ds_fft(1);',
+'   for(int i=0;i<N;i++){double w=it?ds_tab[i]*g:0;ds_re[i]=(ds_out[2*(o+i)]+ds_re[i]*w)*ds_tab[i];ds_im[i]=(ds_out[2*(o+i)+1]+ds_im[i]*w)*ds_tab[i];}',
+'   ds_fft(-1);',
+'   for(int k=1;k<H;k++){',
+'    int k2=N-k;double ar=ds_re[k],ai=ds_im[k],br=ds_re[k2],bi=ds_im[k2],x,y,u,v,f;',
+'    double a=ar+br,b=ai-bi,m=ds_sqrt(a*a+b*b);',
+'    if(m>0){f=ds_mag[k]/m;x=a*f;y=b*f;}else{s=s*1103515245u+12345u;q=(s>>8)&M;x=ds_mag[k]*ds_tab[q+H];y=ds_mag[k]*ds_tab[q];}',
+'    a=ai+bi;b=br-ar;m=ds_sqrt(a*a+b*b);',
+(W < 0 ? '    if(m>0){f=ds_mag[H+k]/m;u=a*f;v=b*f;}else{s=s*1103515245u+12345u;q=(s>>8)&M;u=ds_mag[H+k]*ds_tab[q+H];v=ds_mag[H+k]*ds_tab[q];}' :
+  '    if(m>0){f=ds_mag[H+k]/m;u=a*f;v=b*f;}else{s=s*1103515245u+12345u;q=(q+((s>>8)&' + W + '))&M;u=ds_mag[H+k]*ds_tab[q+H];v=ds_mag[H+k]*ds_tab[q];}'),
+'    ds_re[k]=x-v;ds_im[k]=y+u;ds_re[k2]=x+v;ds_im[k2]=u-y;',
+'   }',
+'   ds_re[0]=0;ds_im[0]=0;ds_re[H]=0;ds_im[H]=0;',
+'  }',
+] : [
 '  for(int k=1;k<H;k++){',
 '   int k2=N-k;double ar=ds_re[k],ai=ds_im[k],br=ds_re[k2],bi=ds_im[k2];',
 '   double a=ar+br,b=ai-bi,mL=ds_sqrt(a*a+b*b);',
@@ -131,6 +150,7 @@ pat + '};',
 '   double x=mL*cL,y=mL*sL,u=mR*cR,v=mR*sR;',
 '   ds_re[k]=x-v;ds_im[k]=y+u;ds_re[k2]=x+v;ds_im[k2]=u-y;',
 '  }',
+]).concat([
 '  ds_fft(1);',
 '  for(int i=0;i<N;i++){double w=ds_tab[i]*g;ds_out[2*(o+i)]+=ds_re[i]*w;ds_out[2*(o+i)+1]+=ds_im[i]*w;}',
 ' }',
@@ -152,7 +172,7 @@ pat + '};',
 ' waveOutWrite(ds_wo,&ds_hdr,sizeof(ds_hdr));',
 '}',
 'static int ds_pos(){MMTIME t={TIME_SAMPLES};waveOutGetPosition(ds_wo,&t,sizeof(t));return t.u.sample;} // in frames',
-'#endif');
+'#endif']);
     return L.join('\n') + '\n';
   }
 
@@ -298,6 +318,87 @@ pat + '};',
     jb .e2
     and dword [V(i_on)], 0
 .e2: ` : '    ';
+    var smCode = !c.sm ? '' : `.mg: mov edx, DS_N
+    sub edx, ecx
+    fld qword [ds_re+ecx*8]
+    fadd qword [ds_re+edx*8]
+    fld qword [ds_im+ecx*8]
+    fsub qword [ds_im+edx*8]
+    fmul st0, st0
+    fxch
+    fmul st0, st0
+    faddp st1, st0
+    fsqrt
+    fstp qword [ds_mag+ecx*8]
+    fld qword [ds_im+ecx*8]
+    fadd qword [ds_im+edx*8]
+    fld qword [ds_re+ecx*8]
+    fsub qword [ds_re+edx*8]
+    fmul st0, st0
+    fxch
+    fmul st0, st0
+    faddp st1, st0
+    fsqrt
+    fstp qword [ds_mag+ecx*8+DS_H*8]
+    inc ecx
+    cmp ecx, DS_H
+    jl .mg
+    and dword [V(i_it)], 0
+.it: cmp dword [V(i_it)], 0           ; SMOOTH: phases from the output already written here, refined DS_SM times
+    je .t0
+    fld1
+    call .fft
+.t0: xor ecx, ecx
+.tl: fld qword [ds_tab+ecx*8]
+    cmp dword [V(i_it)], 0
+    fldz                           ; w = it ? tab*g : 0
+    je .tw
+    fstp st0
+    fld st0
+    fmul qword [V(v_gg)]
+.tw: lea eax, [edi+ecx]
+    fld st0
+    fmul qword [ds_re+ecx*8]
+    fadd dword [ds_out+eax*8]
+    fmul st0, st2
+    fstp qword [ds_re+ecx*8]
+    fmul qword [ds_im+ecx*8]
+    fadd dword [ds_out+eax*8+4]
+    fmulp st1, st0
+    fstp qword [ds_im+ecx*8]
+    inc ecx
+    cmp ecx, DS_N
+    jl .tl
+    fld qword [V(v_m1)]
+    call .fft
+    xor ecx, ecx
+    inc ecx
+.k2: mov edx, DS_N
+    sub edx, ecx
+` + "    fld qword [ds_re+ecx*8]\n    fadd qword [ds_re+edx*8]\n    fld qword [ds_im+ecx*8]\n    fsub qword [ds_im+edx*8]\n    fld st1\n    fmul st0, st0\n    fld st1\n    fmul st0, st0\n    faddp st1, st0\n    fsqrt\n    fldz\n    fcomip st0, st1\n    jae .zL\n    fdivr qword [ds_mag+ecx*8]\n    fmul st2, st0\n    fmulp st1, st0\n    fstp qword [V(v_y)]\n    fstp qword [V(v_x)]\n    jmp .dL\n.zL: fcompp\n    fstp st0\n    mov eax, [V(i_seed)]\n    imul eax, eax, 1103515245\n    add eax, 12345\n    mov [V(i_seed)], eax\n    shr eax, 8\n    and eax, DS_M\n    mov ebx, eax\n    fld qword [ds_mag+ecx*8]\n    fld st0\n    fmul qword [ds_tab+ebx*8+DS_H*8]\n    fstp qword [V(v_x)]\n    fmul qword [ds_tab+ebx*8]\n    fstp qword [V(v_y)]\n.dL:\n" + "    fld qword [ds_im+ecx*8]\n    fadd qword [ds_im+edx*8]\n    fld qword [ds_re+edx*8]\n    fsub qword [ds_re+ecx*8]\n    fld st1\n    fmul st0, st0\n    fld st1\n    fmul st0, st0\n    faddp st1, st0\n    fsqrt\n    fldz\n    fcomip st0, st1\n    jae .zR\n    fdivr qword [ds_mag+ecx*8+DS_H*8]\n    fmul st2, st0\n    fmulp st1, st0\n    fstp qword [V(v_v)]\n    fstp qword [V(v_u)]\n    jmp .dR\n.zR: fcompp\n    fstp st0\n    mov eax, [V(i_seed)]\n    imul eax, eax, 1103515245\n    add eax, 12345\n    mov [V(i_seed)], eax\n    shr eax, 8\n" + rngR + "    and eax, DS_M\n    mov ebx, eax\n    fld qword [ds_mag+ecx*8+DS_H*8]\n    fld st0\n    fmul qword [ds_tab+ebx*8+DS_H*8]\n    fstp qword [V(v_u)]\n    fmul qword [ds_tab+ebx*8]\n    fstp qword [V(v_v)]\n.dR:\n" + `    fld qword [V(v_x)]
+    fsub qword [V(v_v)]
+    fstp qword [ds_re+ecx*8]
+    fld qword [V(v_y)]
+    fadd qword [V(v_u)]
+    fstp qword [ds_im+ecx*8]
+    fld qword [V(v_x)]
+    fadd qword [V(v_v)]
+    fstp qword [ds_re+edx*8]
+    fld qword [V(v_u)]
+    fsub qword [V(v_y)]
+    fstp qword [ds_im+edx*8]
+    inc ecx
+    cmp ecx, DS_H
+    jl .k2
+    fldz
+    fst qword [ds_re]
+    fst qword [ds_im]
+    fst qword [ds_re+DS_H*8]
+    fstp qword [ds_im+DS_H*8]
+    inc dword [V(i_it)]
+    cmp dword [V(i_it)], ${c.sm}
+    jbe .it
+`;
     return `; DroneSynth8k ASM export (generated). NASM, 32-bit x86, x87 FPU. Pass 1: gm.dls tracker, pass 2: stereo Paulstretch.
 ; Bit-exact with the web tool and the C++ export. Expected FNV-1a hash of ds_out: ${hash || '?'}
 ; gm.dls size when exported: ${c.dlsSize} bytes (sample offsets below are absolute file offsets).
@@ -358,7 +459,7 @@ v_sp:    dq 0
 v_disp:  dq 0
 v_gg:    dq 0
 v_sgn:   dq 0
-c12:     dd 12
+${c.sm ? 'v_x:     dq 0\nv_y:     dq 0\nv_u:     dq 0\nv_v:     dq 0\n' : ''}c12:     dd 12
 c127:    dd 127
 c1200:   dd 1200
 c44100:  dd 44100
@@ -379,7 +480,7 @@ ${c.env ? 'i_iptr:  dd 0\n' : ''}i_seed:  dd DS_SEED
 i_p:     dd 0
 i_st:    dd 0
 i_ch:    dd 0
-cw:      dw 0x027F
+${c.sm ? 'i_it:    dd 0\n' : ''}cw:      dw 0x027F
 ds_vb equ ds_v+128
 ds_pat:
 ${lines(pat, 32, 'db')}
@@ -396,7 +497,6 @@ ds_wfx:    dw 3, 2
            dd 44100, 44100*8
            dw 8, 32, 0
 ds_hdr:    dd ds_out, DS_OUT_LEN*8, 0, 0, 0, 0, 0, 0
-ds_mmt:    dd 2, 0, 0
 ds_wo:     dd 0
 %endif
 
@@ -408,7 +508,7 @@ ds_re:     resq DS_N
 ds_im:     resq DS_N
 ds_tab:    resq DS_N*5/2
 ds_out:    resd DS_OUT_LEN*2
-ds_dls:    resb DS_DLS_SIZE
+${c.sm ? 'ds_mag:    resq DS_N             ; SMOOTH: magnitudes L (1..H-1), R (H+1..N-1)\n' : ''}ds_dls:    resb DS_DLS_SIZE
 
 section .text
 ; st0 = x -> st0 = 2^x (engine.js mexp2). clobbers ecx
@@ -658,7 +758,7 @@ ${envStep}fld qword [V(v_pos)]
     fild dword [V(cH10)]
     fidiv dword [V(cST)]
     fstp qword [V(v_disp)]
-    xor edi, edi
+${c.sm ? '    xor ebx, ebx                   ; q = 0\n' : ''}    xor edi, edi
 .f: fld qword [V(v_sp)]
     fild dword [V(cDRY)]
     fcomip st0, st1
@@ -685,7 +785,7 @@ ${envStep}fld qword [V(v_pos)]
     fstp qword [ds_im+DS_H*8]
     xor ecx, ecx
     inc ecx
-.k: mov edx, DS_N
+${c.sm ? smCode : `.k: mov edx, DS_N
     sub edx, ecx
     fld qword [ds_re+ecx*8]
     fadd qword [ds_re+edx*8]
@@ -742,7 +842,7 @@ ${rngR}    and eax, DS_M
     inc ecx
     cmp ecx, DS_H
     jl .k
-    fld1
+`}    fld1
     call .fft
     xor ecx, ecx
 .o: fld qword [ds_tab+ecx*8]
@@ -801,6 +901,7 @@ ds_play:
     push dword [ds_wo]
     call [__imp__waveOutWrite@12]
     ret
+section .text$pos code              ; own sections: Crinkler drops ds_pos when it is never called
 ds_pos:            ; current playback position in frames
     push 12
     push ds_mmt
@@ -808,6 +909,8 @@ ds_pos:            ; current playback position in frames
     call [__imp__waveOutGetPosition@12]
     mov eax, [ds_mmt+4]
     ret
+section .data$pos data
+ds_mmt:    dd 2, 0, 0
 %endif
 `;
   }

@@ -255,6 +255,8 @@
     psShows.push(param(P, 'GAIN %', 0, 200, function () { return ps().gain; }, function (v) { ps().gain = v; }));
     psShows.push(param(P, 'DIFFUSION', 0, 10, function () { return ps().df == null ? 10 : ps().df; }, function (v) { ps().df = v; }));
     psShows.push(param(P, 'STEREO', 0, 10, function () { return ps().sw == null ? 10 : ps().sw; }, function (v) { ps().sw = v; }));
+    psShows.push(param(P, 'SMOOTH', 0, 4, function () { return ps().sm || 0; }, function (v) { ps().sm = v; }));
+    P.lastChild.title = 'Gegen Lautstaerke-Pulsieren: 0 = klassisches Paulstretch, 2 = empfohlen. Jede Stufe kostet Renderzeit.';
   })();
   function refreshPs() { $('sWin').value = song.ps.win; psShows.forEach(function (f) { f(); }); }
 
