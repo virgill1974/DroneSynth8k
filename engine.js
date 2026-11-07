@@ -83,7 +83,7 @@
     var P = song.ps;
     c.win = P.win; c.st = P.st; c.seed = P.seed >>> 0; c.gain = P.gain; c.df = P.df == null ? 10 : P.df;
     c.sw = P.sw == null ? 10 : P.sw;
-    c.sm = P.sm == null ? 0 : P.sm; // SMOOTH 0..4 (refinement passes against loudness pulsing, 0 = plain Paulstretch)
+    c.sm = P.sm ? 1 : 0; // SMOOTH on/off: phase vocoder with phase locking instead of random phases (old songs: 2..4 = on)
     var N = 1 << c.win, H = N >> 1, disp = H * 10 / c.st, frames = 0;
     for (var sp = 0; sp < c.dryLen; sp += disp) frames++;
     c.outLen = frames * H + H;
@@ -161,48 +161,61 @@
     var sc = sinCos(N), S = sc[0], C = sc[1], ts = 0, tc = 1, tt;
     for (var k = 0; k < N * 5 / 2; k++) { tab[k] = ts; tt = tc * C - ts * S; ts = ts * C + tc * S; tc = tt; }
     var out = new Float32Array(c.outLen * 2);
-    var s = c.seed >>> 0, g = c.gain / (200 * N), disp = H * 10 / c.st, o = 0, q = 0, SM = c.sm, mag = SM ? new Float64Array(N) : null;
+    var s = c.seed >>> 0, g = c.gain / (200 * N), disp = H * 10 / c.st, o = 0, SM = c.sm;
+    // SMOOTH: X1 = spectrum H samples later, X = this window (L at k, R at H+k; real part, imaginary part N later),
+    // mg = |X|^2, Q = rotation per bin, U = last output spectrum
+    var r2, i2, X, mg, Q, U;
+    if (SM) { r2 = new Float64Array(N); i2 = new Float64Array(N); X = new Float64Array(2 * N); mg = new Float64Array(N); Q = new Float64Array(2 * N); U = new Float64Array(2 * N); }
     for (var sp = 0; sp < n; sp += disp, o += H) {
-      var p = sp | 0, i, j, w;
-      for (i = 0; i < N; i++) { j = p + i; w = tab[i]; re[i] = j < n ? L[j] * w : 0; im[i] = j < n ? R[j] * w : 0; }
-      fft(re, im, N, tab, -1);
+      var p = sp | 0, i, j, w, h;
+      for (h = SM ? H : 0; h >= 0; h -= H) { // SMOOTH: first the window H later (for the phase advance), then this one
+        for (i = 0; i < N; i++) { j = p + h + i; w = tab[i]; re[i] = j < n ? L[j] * w : 0; im[i] = j < n ? R[j] * w : 0; }
+        fft(re, im, N, tab, -1);
+        if (h) for (i = 0; i < N; i++) { r2[i] = re[i]; i2[i] = im[i]; }
+      }
       re[0] = 0; im[0] = 0; re[H] = 0; im[H] = 0;
       if (!SM) for (k = 1; k < H; k++) {
         var k2 = N - k, ar = re[k], ai = im[k], br = re[k2], bi = im[k2];
         var a = ar + br, b = ai - bi, mL = Math.sqrt(a * a + b * b);
         a = ai + bi; b = ar - br;
         var mR = Math.sqrt(a * a + b * b);
-        s = (Math.imul(s, 1103515245) + 12345) >>> 0; q = (s >>> 8) & M; var sL = tab[q], cL = tab[q + H];
+        s = (Math.imul(s, 1103515245) + 12345) >>> 0; var q = (s >>> 8) & M, sL = tab[q], cL = tab[q + H];
         s = (Math.imul(s, 1103515245) + 12345) >>> 0; q = W < 0 ? (s >>> 8) & M : (q + ((s >>> 8) & W)) & M; var sR = tab[q], cR = tab[q + H];
         var x = mL * cL, y = mL * sL, u = mR * cR, v = mR * sR;
         re[k] = x - v; im[k] = y + u; re[k2] = x + v; im[k2] = u - y;
       }
       else {
-        // SMOOTH: keep the magnitudes, take the phases from what the output already holds here (tail of the previous
-        // windows), then refine them SM times against tail + this window. Bins where that is silent get random phases.
+        // SMOOTH: phase vocoder with identity phase locking. Every bin keeps this window's own phase, turned by the
+        // rotation of the magnitude peak it belongs to; the rotation continues the last output spectrum U by the phase
+        // the input advances over H samples: Q = normalize(U * X1 * conj(X)^2). Bins without a phase yet: Q = 1.
         for (k = 1; k < H; k++) {
-          k2 = N - k; ar = re[k]; ai = im[k]; br = re[k2]; bi = im[k2];
-          a = ar + br; b = ai - bi; mag[k] = Math.sqrt(a * a + b * b);
-          a = ai + bi; b = ar - br; mag[H + k] = Math.sqrt(a * a + b * b);
+          k2 = N - k;
+          for (var ch = 0; ch < 2; ch++) {
+            var kk = ch * H + k, xr, xi, yr, yi;
+            if (ch) { xr = im[k] + im[k2]; xi = re[k2] - re[k]; yr = i2[k] + i2[k2]; yi = r2[k2] - r2[k]; }
+            else { xr = re[k] + re[k2]; xi = im[k] - im[k2]; yr = r2[k] + r2[k2]; yi = i2[k] - i2[k2]; }
+            X[kk] = xr; X[N + kk] = xi; mg[kk] = xr * xr + xi * xi;
+            var tr = yr * xr + yi * xi, ti = yi * xr - yr * xi;
+            yr = tr * xr + ti * xi; yi = ti * xr - tr * xi;
+            tr = U[kk] * yr - U[N + kk] * yi; ti = U[kk] * yi + U[N + kk] * yr;
+            var m = Math.sqrt(tr * tr + ti * ti);
+            if (m > 0) { Q[kk] = tr / m; Q[N + kk] = ti / m; } else { Q[kk] = 1; Q[N + kk] = 0; }
+          }
         }
-        for (var it = 0; it <= SM; it++) {
-          if (it) fft(re, im, N, tab, 1);
-          for (i = 0; i < N; i++) {
-            w = it ? tab[i] * g : 0;
-            re[i] = (out[2 * (o + i)] + re[i] * w) * tab[i]; im[i] = (out[2 * (o + i) + 1] + im[i] * w) * tab[i];
+        for (k = 1; k < H; k++) {
+          k2 = N - k;
+          for (ch = 0; ch < 2; ch++) {
+            var b0 = ch * H, pk = k;
+            for (;;) { // climb to the magnitude peak of this bin
+              if (pk + 1 < H && mg[b0 + pk + 1] > mg[b0 + pk]) pk++;
+              else if (pk > 1 && mg[b0 + pk - 1] > mg[b0 + pk]) pk--;
+              else break;
+            }
+            kk = b0 + k; pk += b0;
+            U[kk] = X[kk] * Q[pk] - X[N + kk] * Q[N + pk]; U[N + kk] = X[kk] * Q[N + pk] + X[N + kk] * Q[pk];
           }
-          fft(re, im, N, tab, -1);
-          for (k = 1; k < H; k++) {
-            k2 = N - k; ar = re[k]; ai = im[k]; br = re[k2]; bi = im[k2];
-            a = ar + br; b = ai - bi; var m = Math.sqrt(a * a + b * b), f;
-            if (m > 0) { f = mag[k] / m; x = a * f; y = b * f; }
-            else { s = (Math.imul(s, 1103515245) + 12345) >>> 0; q = (s >>> 8) & M; x = mag[k] * tab[q + H]; y = mag[k] * tab[q]; }
-            a = ai + bi; b = br - ar; m = Math.sqrt(a * a + b * b);
-            if (m > 0) { f = mag[H + k] / m; u = a * f; v = b * f; }
-            else { s = (Math.imul(s, 1103515245) + 12345) >>> 0; q = W < 0 ? (s >>> 8) & M : (q + ((s >>> 8) & W)) & M; u = mag[H + k] * tab[q + H]; v = mag[H + k] * tab[q]; }
-            re[k] = x - v; im[k] = y + u; re[k2] = x + v; im[k2] = u - y;
-          }
-          re[0] = 0; im[0] = 0; re[H] = 0; im[H] = 0;
+          x = U[k]; y = U[N + k]; u = U[H + k]; v = U[N + H + k];
+          re[k] = x - v; im[k] = y + u; re[k2] = x + v; im[k2] = u - y;
         }
       }
       fft(re, im, N, tab, 1);

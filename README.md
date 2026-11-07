@@ -22,7 +22,7 @@ Das Projekt ist reines HTML/JS ohne Framework und ohne Build-Schritt.
 | Tracker | 8 Kanäle, Kanal *n* spielt immer Instrument *n*. `===` = Note-Off. Klick auf einen Spaltenkopf wählt das Instrument. |
 | Scope | Oszilloskop (L grün, R amber) und Lissajous (X = L, Y = R), sample-synchron zum laufenden Play/Preview |
 | Instrument | Sound aus der gruppierten Liste: 128 GM-Sounds (16 Kategorien), **9 Drum Kits** (Standard, Room, Power, Electronic, TR-808, Jazz, Brush, Orchestra, SFX) und **98 GS-Variationen**. Dazu Attack/Release in ms (linear), Volume, Pan, Preview. Der Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** gilt für den ganzen Song. |
-| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer; kostet im Export 0 Byte), Stereo (0–10: Stereobreite; 10 = L/R mit unabhängigen Zufallsphasen, maximal breit; 0 = L und R mit gleichen Phasen; bei 10 kostet es 0 Byte, darunter ca. 6 Byte), Smooth (0–4: gegen Lautstärke-Pulsieren, siehe unten; 0 = klassisches Paulstretch, kostet dann 0 Byte). |
+| Paulstretch | Window-Size (2^10–2^18), Stretch-Faktor (1.0–100.0), Gain (0–200 %), Diffusion (0–10: Bereich der Zufallsphasen; 10 = voll diffus, kleiner = pulsierender/metallischer; kostet im Export 0 Byte), Stereo (0–10: Stereobreite; 10 = L/R mit unabhängigen Zufallsphasen, maximal breit; 0 = L und R mit gleichen Phasen; bei 10 kostet es 0 Byte, darunter ca. 6 Byte), Smooth (0/1: gegen Lautstärke-Pulsieren, siehe unten; 0 = klassisches Paulstretch, kostet dann 0 Byte). |
 
 Lautstärke-Wabern: Paulstretch würfelt die Phasen jedes Frequenzbands in jedem Fenster neu. Bänder, die zum selben Ton gehören, überlagern sich dadurch mal verstärkend, mal auslöschend. Das ist im Original-Paulstretch genauso. Gemessen über 50-ms-Blöcke:
 
@@ -35,10 +35,12 @@ Lautstärke-Wabern: Paulstretch würfelt die Phasen jedes Frequenzbands in jedem
 Jeder einzelne Kanal wabert so stark wie die Mono-Summe. In Stereo klingt es nur ruhiger, weil L und R unabhängig wabern und sich beim Hören ausgleichen. Der STEREO-Regler ändert daran nichts, er regelt nur die Breite.
 
 Was hilft:
-- **SMOOTH 2** (empfohlen): Jedes Fenster übernimmt seine Phasen aus dem, was im Ausgang an dieser Stelle schon steht, und gleicht sie dann zweimal mit dem eigenen Fenster ab (RTISI-Verfahren). Die Betragsspektren bleiben gleich, nur die Phasen passen danach zusammen, sodass sich die Überlappungen nicht mehr auslöschen.
-  - Gemessen an 12 gehaltenen GM-Tönen (Spanne p95–p5 über 50-ms-Blöcke, ein Kanal): im Mittel 8,7 → 4,3 dB, Flöte 13 → 1 dB, Klavier 10 → 2 dB.
-  - Im Demo-Song (Kanäle einzeln, langsame Verläufe herausgerechnet): Pad 2 11,7 → 3,5 dB, Strings 8,3 → 3,7 dB. Das Drum Kit wird etwas unruhiger (3,3 → 4,9 dB).
-  - Kosten: etwa dreifache Renderzeit, rund 2 dB mehr Pegel (GAIN anpassen) und im Export ca. 100–150 Byte. SMOOTH 3 und 4 waren gemessen nicht besser als 2.
+- **SMOOTH 1**: Statt Zufallsphasen laufen die Phasen von Fenster zu Fenster weiter (Phase Vocoder mit Phase Locking). Jedes Frequenzband dreht seine Phase um so viel weiter, wie sich die Eingabe über H Samples dreht. Dazu kommt eine zweite FFT des Eingangs H Samples später. Bänder, die zur selben Spitze im Spektrum gehören, drehen gemeinsam und behalten die Phasenlage aus dem Eingang. Dadurch bleibt ein gehaltener Ton ein durchgehender Ton und überlagert sich nicht mehr mit sich selbst.
+  - Gemessen an 12 gehaltenen GM-Tönen (Stereo-Pegel in Blöcken von H/8, Fenster 2^14): Die zufällige Schwankung sinkt von 1,17 auf 0,24 dB Standardabweichung. Die regelmäßige Welligkeit im Fenstertakt liegt bei 0–0,2 dB (Klavier, Flöte, Orgel, Bass), bei Ensemble-Klängen (Chor, Synth-Strings, Pads) bei 1,2–2,3 dB, weil dort viele leicht verstimmte Stimmen im selben Band liegen.
+  - Im Demo-Song (Kanäle einzeln, Spanne p95–p5 über 50-ms-Blöcke, langsame Verläufe herausgerechnet): Pad 2 11,7 → 2,0 dB, Strings 8,3 → 2,4 dB, Fretless 6,0 → 1,6 dB, Chor 7,0 → 5,5 dB. Das Drum Kit wird unruhiger (3,3 → 5,1 dB).
+  - Klang: klarer und weniger verwaschen als Paulstretch, eher wie ein eingefrorener Ton. DIFFUSION, STEREO und der Zufall wirken dann nicht; das Stereobild kommt aus dem Eingang.
+  - Kosten: etwa 1,6-fache Renderzeit, rund 2,5 dB mehr Pegel (GAIN anpassen) und im Export ca. 150 Byte (ASM) bzw. 265 Byte (C++).
+  - Die erste Fassung von SMOOTH (Stufen 1–4, Phasen aus dem bisherigen Ausgang angeglichen, RTISI) erzeugte ein regelmäßiges Pumpen von 2–3 dB im Fenstertakt und ist ersetzt. Ältere Songs mit SMOOTH 2–4 laden als SMOOTH 1.
 - Größere Fenster machen das Pulsieren nur langsamer (2^14: ~3,5 Hz, 2^17: ~1,9 Hz), nicht flacher.
 - dichteres Material: Akkorde, mehrere Stimmen, Rauschanteile
 - DIFFUSION 8: Bei Einzeltönen geht Mono-Wabern von ~12 auf ~8 dB zurück, der Klang wird aber etwas pulsierender
@@ -143,10 +145,10 @@ Hinweis zur Größe: Für Crinkler zählt die komprimierte Größe. Gleichartige
 
 Gemessen am Demo-Song als fertige Exe mit Crinkler 3.0b (`/COMPMODE:SLOW`), mit Loader, Player und Startcode:
 
-| Variante | Standard | Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** abgewählt | SMOOTH 2 |
+| Variante | Standard | Haken **ATTACK / RELEASE / VOLUME / NOTE-OFF** abgewählt | SMOOTH 1 |
 |---|---|---|---|
-| ASM | 1751 B | 1608 B | 1849 B |
-| C++ (MSVC `/O1`, x86) | 2080 B | 1959 B | 2232 B |
+| ASM | 1751 B | 1608 B | 1899 B |
+| C++ (MSVC `/O1`, x86) | 2080 B | 1959 B | 2345 B |
 
 Mit der Crinkler-Option `/TINYIMPORT` werden es jeweils rund 66 Byte weniger, die Hashes stimmen dabei. `/TINYHEADER` ist für 1k-Intros gedacht und lieferte hier Exes, die Windows nicht startet. Bei MSVC war `/O1` kleiner als `/O2` und `/Os`.
 
@@ -186,7 +188,7 @@ Bitgenauigkeit mit x87:
 - Pass 1 ist ein Sample-Player mit linearer Interpolation, DLS-Loops, Fine-Tune, Attenuation und 44100 Hz.
 - Pass 2 ist Paulstretch mit radix-2-FFT und Sinus-Fenster bei Hop N/2. Eine einzige komplexe FFT verarbeitet beide Kanäle zugleich (L im Real-, R im Imaginärteil). Die Spektren werden getrennt, und **jeder Kanal bekommt eigene Zufallsphasen**. Daraus entsteht die Stereo-Breite.
 - Der Zufall kommt aus einem 32-Bit-LCG mit Seed (intern fest auf 1; jeder Seed klingt statistisch gleich). Die Phasen sind Indizes in die Sinustabelle.
-- SMOOTH > 0: Die Phasen kommen aus der FFT des bisherigen Ausgangs (float32) plus des eigenen Fensters, normiert über `a / sqrt(a*a + b*b)`. Dafür reichen dieselben Grundrechenarten. Ist der Ausgang an einer Stelle still, gibt es Zufallsphasen wie ohne SMOOTH.
+- SMOOTH 1: Pro Band wird die Drehung Q = U · X1 · conj(X)² über `a / sqrt(a*a + b*b)` normiert (U = letztes Ausgangsspektrum, X = dieses Fenster, X1 = Fenster H später). Jedes Band sucht per Bergsteigen über |X|² seine Spitze und übernimmt deren Q. Das kommt ohne Winkelfunktionen aus, nur mit Grundrechenarten und Vergleichen. Bänder ohne bisherige Phase bekommen Q = 1, also die Phase des Eingangs.
 - Die Ausgabe wird als float32 overlap-add direkt in den Ausgabepuffer geschrieben (`Float32Array` bzw. `float[]`, beide mit Round-to-nearest-even).
 
 ## Tests
